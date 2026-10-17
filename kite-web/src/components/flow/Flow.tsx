@@ -3,11 +3,10 @@ import { FlowData, NodeData } from "@/lib/flow/dataSchema";
 import {
   Node,
   OnSelectionChangeParams,
-  useReactFlow,
   useStoreApi,
 } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import FlowEditor, { FlowEditorApi } from "./FlowEditor";
+import FlowEditor, { FlowEditorApi, FlowSelectionSummary } from "./FlowEditor";
 import FlowMenu from "./FlowMenu";
 import { LogEntry } from "@/lib/types/wire.gen";
 import FlowAIChat from "./FlowAIChat";
@@ -18,8 +17,10 @@ import FlowMobileBottomBar from "./FlowMobileBottomBar";
 import FlowAddBlockDrawer from "./FlowAddBlockDrawer";
 import FlowNodeEditorDrawer from "./FlowNodeEditorDrawer";
 import FlowLogsDrawer from "./FlowLogsDrawer";
+import FlowHelpPopup from "./FlowHelpPopup";
 import { useIsMobile } from "@/lib/hooks/use-mobile";
 import { track } from "@/lib/analytics";
+import { toast } from "sonner";
 
 interface Props {
   flowData: FlowData;
@@ -49,6 +50,17 @@ export default function Flow({
   const [logsOpen, setLogsOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [hasClipboard, setHasClipboard] = useState(false);
+  const [mobileSelectMode, setMobileSelectMode] = useState(false);
+  const [mobileMoveMode, setMobileMoveMode] = useState(false);
+
+  const [selectionSummary, setSelectionSummary] =
+    useState<FlowSelectionSummary>({
+      topLevelCount: 0,
+      actionableCount: 0,
+      canDisconnect: false,
+      singleSelectedNodeId: null,
+    });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<FlowEditorApi>(null);
@@ -63,15 +75,27 @@ export default function Flow({
   useEffect(() => {
     if (chatOpen) track("flow_ai_opened", { context });
   }, [chatOpen, context]);
-
-  const { fitView } = useReactFlow();
   const store = useStoreApi();
+
+  const handleSelectionSummaryChange = useCallback(
+    (summary: FlowSelectionSummary) => {
+      setSelectionSummary(summary);
+      if (summary.singleSelectedNodeId) {
+        setSelectedNodeId(summary.singleSelectedNodeId);
+      } else if (summary.topLevelCount === 0) {
+        setSelectedNodeId(null);
+        setMobileSelectMode(false);
+        setMobileMoveMode(false);
+      }
+    },
+    []
+  );
 
   const onSelectionChange = useCallback(
     ({ nodes }: OnSelectionChangeParams) => {
       if (nodes.length === 1) {
         setSelectedNodeId(nodes[0].id);
-      } else {
+      } else if (nodes.length === 0) {
         setSelectedNodeId(null);
         setMobileEditorOpen(false);
       }
@@ -82,12 +106,24 @@ export default function Flow({
   const handleNodeTap = useCallback(
     (node: Node<NodeData>) => {
       setSelectedNodeId(node.id);
-      if (isMobile) {
+      if (isMobile && !mobileSelectMode && !mobileMoveMode) {
         setMobileEditorOpen(true);
       }
     },
-    [isMobile]
+    [isMobile, mobileSelectMode, mobileMoveMode]
   );
+
+  const handleEnterMobileSelectMode = useCallback((node: Node<NodeData>) => {
+    setMobileSelectMode(true);
+    setMobileMoveMode(false);
+    setSelectedNodeId(node.id);
+  }, []);
+
+  const handleExitMobileSelectMode = useCallback(() => {
+    setMobileSelectMode(false);
+    setMobileMoveMode(false);
+    setSelectedNodeId(null);
+  }, []);
 
   const handleHistoryChange = useCallback((u: boolean, r: boolean) => {
     setCanUndo(u);
@@ -95,14 +131,17 @@ export default function Flow({
   }, []);
 
   const deselectNode = useCallback(() => {
+    editorRef.current?.clearSelection();
     store.getState().addSelectedNodes([]);
     setSelectedNodeId(null);
+    setMobileSelectMode(false);
+    setMobileMoveMode(false);
     setMobileEditorOpen(false);
   }, [store]);
 
-  const handleFitView = useCallback(() => {
-    fitView({ padding: 0.2, duration: 250 });
-  }, [fitView]);
+  const handleCenterFlow = useCallback(() => {
+    editorRef.current?.centerFlow();
+  }, []);
 
   const handleUndo = useCallback(() => {
     editorRef.current?.undo();
@@ -115,6 +154,54 @@ export default function Flow({
   const handleFormat = useCallback(() => {
     editorRef.current?.format();
   }, []);
+
+  const handleCopy = useCallback(() => {
+    const ok = editorRef.current?.copy();
+    if (ok) {
+      const count = selectionSummary.actionableCount;
+      toast.success(
+        count > 1 ? `Copied ${count} blocks` : "Copied block to clipboard"
+      );
+    }
+  }, [selectionSummary.actionableCount]);
+
+  const handleCut = useCallback(() => {
+    const count = selectionSummary.actionableCount;
+    const ok = editorRef.current?.cut();
+    if (ok) {
+      toast.success(count > 1 ? `Cut ${count} blocks` : "Cut block");
+      deselectNode();
+    }
+  }, [selectionSummary.actionableCount, deselectNode]);
+
+  const handleDuplicate = useCallback(() => {
+    editorRef.current?.duplicate();
+  }, []);
+
+  const handlePaste = useCallback(() => {
+    editorRef.current?.paste(null);
+  }, []);
+
+  const handleDisconnect = useCallback(() => {
+    const count = selectionSummary.topLevelCount;
+    const ok = editorRef.current?.disconnect();
+    if (ok) {
+      toast.success(
+        count > 1
+          ? `Disconnected ${count} blocks`
+          : "Disconnected block connections"
+      );
+    }
+  }, [selectionSummary.topLevelCount]);
+
+  const handleDelete = useCallback(() => {
+    const count = selectionSummary.actionableCount;
+    const ok = editorRef.current?.deleteSelected();
+    if (ok) {
+      toast.success(count > 1 ? `Deleted ${count} blocks` : "Deleted block");
+      deselectNode();
+    }
+  }, [selectionSummary.actionableCount, deselectNode]);
 
   return (
     <FlowContextStoreProvider type={context}>
@@ -130,6 +217,13 @@ export default function Flow({
       <div
         ref={containerRef}
         className="flex flex-auto overflow-y-hidden relative"
+        onContextMenu={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target?.closest("input, textarea, [contenteditable]")) return;
+          if (!target?.closest(".react-flow")) {
+            e.preventDefault();
+          }
+        }}
       >
         <FlowMenu selectedNodeId={selectedNodeId} logs={logs} />
 
@@ -138,8 +232,15 @@ export default function Flow({
             initialData={flowData}
             onChange={onChange}
             onSelectionChange={onSelectionChange}
+            onSelectionSummaryChange={handleSelectionSummaryChange}
+            onClipboardChange={setHasClipboard}
             onNodeTap={handleNodeTap}
             onHistoryChange={handleHistoryChange}
+            isMobile={isMobile}
+            mobileSelectMode={mobileSelectMode}
+            mobileMoveMode={mobileMoveMode}
+            onEnterMobileSelectMode={handleEnterMobileSelectMode}
+            onExitMobileSelectMode={handleExitMobileSelectMode}
             containerRef={containerRef}
             apiRef={editorRef}
             viewportKey={viewportKey}
@@ -155,6 +256,7 @@ export default function Flow({
               Ask AI
             </Button>
           )}
+          <FlowHelpPopup />
         </div>
 
         {chatMounted && (
@@ -169,13 +271,26 @@ export default function Flow({
         )}
 
         <FlowMobileBottomBar
-          selectedNodeId={selectedNodeId}
+          topLevelCount={selectionSummary.topLevelCount}
+          actionableCount={selectionSummary.actionableCount}
+          canDisconnect={selectionSummary.canDisconnect}
+          hasClipboard={hasClipboard}
+          isSelectMode={mobileSelectMode}
+          isMoveMode={mobileMoveMode}
           hidden={mobileEditorOpen || addBlockOpen || logsOpen}
           onAddBlock={() => setAddBlockOpen(true)}
           onEditNode={() => setMobileEditorOpen(true)}
           onDeselectNode={deselectNode}
+          onStartMove={() => setMobileMoveMode(true)}
+          onStopMove={() => setMobileMoveMode(false)}
+          onCopy={handleCopy}
+          onCut={handleCut}
+          onDuplicate={handleDuplicate}
+          onDisconnect={handleDisconnect}
+          onDelete={handleDelete}
+          onPaste={handlePaste}
           onOpenLogs={() => setLogsOpen(true)}
-          onFitView={handleFitView}
+          onCenterFlow={handleCenterFlow}
           onUndo={handleUndo}
           onRedo={handleRedo}
           onFormat={handleFormat}
@@ -192,7 +307,12 @@ export default function Flow({
         <FlowNodeEditorDrawer
           nodeId={selectedNodeId}
           open={mobileEditorOpen && !!selectedNodeId}
-          onOpenChange={setMobileEditorOpen}
+          onOpenChange={(open) => {
+            setMobileEditorOpen(open);
+            if (!open && !mobileSelectMode) {
+              deselectNode();
+            }
+          }}
         />
 
         <FlowLogsDrawer

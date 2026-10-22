@@ -18,7 +18,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useRouter } from "next/router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import AppSecretDialog from "../app/AppSecretDialog";
 import ConfirmDialog from "../common/ConfirmDialog";
@@ -34,12 +34,21 @@ export default function FlowSecretList({
 }: {
   hideHeader?: boolean;
 }) {
-  const [scopeTab, setScopeTab] = useState<ScopeTab>("all");
   const router = useRouter();
   const contextCommandId = useFlowContext((c) => c.commandId);
   const commandId =
     contextCommandId ||
     (typeof router.query.cmdId === "string" ? router.query.cmdId : undefined);
+
+  const [scopeTab, setScopeTab] = useState<ScopeTab>(
+    commandId ? "cmd" : "all"
+  );
+
+  useEffect(() => {
+    if (commandId) {
+      setScopeTab("cmd");
+    }
+  }, [commandId]);
 
   const secrets = useAppSecrets();
   const nodes = useNodes<Node<NodeData>>();
@@ -118,7 +127,7 @@ export default function FlowSecretList({
             <AppSecretDialog
               commandId={commandId}
               defaultCommandId={
-                scopeTab === "cmd" && commandId ? commandId : null
+                scopeTab === "global" ? null : commandId ?? null
               }
             >
               <Button size="sm" className="gap-1.5 h-8 font-medium">
@@ -142,7 +151,7 @@ export default function FlowSecretList({
           <AppSecretDialog
             commandId={commandId}
             defaultCommandId={
-              scopeTab === "cmd" && commandId ? commandId : null
+              scopeTab === "global" ? null : commandId ?? null
             }
           >
             <Button size="sm" className="gap-1.5 h-8 flex-none font-medium">

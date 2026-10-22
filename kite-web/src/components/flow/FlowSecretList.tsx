@@ -173,7 +173,10 @@ export default function FlowSecretList({
         </Tabs>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0">
+      {/* Radix wraps the content in a display: table div that grows to fit
+          its longest line, which stops truncate from working. Making it a
+          block keeps the tiles as wide as the rail. */}
+      <ScrollArea className="flex-1 min-h-0 [&_[data-radix-scroll-area-viewport]>div]:!block">
         <div className="flex flex-col gap-2 px-4 pb-4 pt-1">
           {misusedTrueSecrets.length > 0 && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2.5">

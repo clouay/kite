@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { templated } from "../flow/dataSchema";
+import { templated, urlOrPlaceholder } from "../flow/dataSchema";
 import { BlockDefinition } from "./types";
 
 export const httpRequest: BlockDefinition = {
@@ -15,7 +15,10 @@ export const httpRequest: BlockDefinition = {
       secrets: true,
       schema: z
         .object({
-          url: templated(z.string().url(), "URL to send the request to."),
+          url: templated(
+            urlOrPlaceholder(),
+            "URL to send the request to."
+          ),
           method: z
             .enum(["GET", "POST", "PUT", "PATCH", "DELETE"])
             .describe("HTTP method of the request."),

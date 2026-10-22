@@ -107,6 +107,27 @@ export function numericOrPlaceholder(
     .describe(description);
 }
 
+// A URL (http or https), or a template that contains placeholders like
+// {{secrets.URL}} evaluated when the flow runs.
+export function urlOrPlaceholder(description?: string) {
+  const schema = z
+    .string()
+    .min(1, "URL is required")
+    .refine(
+      (val) => {
+        if (val.includes("{{")) return true;
+        try {
+          const parsed = new URL(val);
+          return parsed.protocol === "http:" || parsed.protocol === "https:";
+        } catch {
+          return false;
+        }
+      },
+      { message: "Invalid URL" }
+    );
+  return description ? schema.describe(description) : schema;
+}
+
 // Not enforced here, as the service doesn't validate flows of message
 // components, so saved ones can hold other names.
 export const temporaryNameSchema = z

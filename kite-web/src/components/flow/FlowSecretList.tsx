@@ -12,6 +12,7 @@ import {
   CheckIcon,
   CopyIcon,
   FileTextIcon,
+  GlobeIcon,
   KeyRoundIcon,
   PencilIcon,
   PlusIcon,
@@ -325,7 +326,7 @@ function FlowSecretTile({
       <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
         <div
           className={cn(
-            "rounded-md w-8 h-8 flex justify-center items-center flex-none shadow-sm",
+            "relative rounded-md w-8 h-8 flex justify-center items-center flex-none shadow-sm",
             secret.is_secret
               ? "bg-amber-500 text-white"
               : "bg-blue-500 text-white"
@@ -335,6 +336,14 @@ function FlowSecretTile({
             <KeyRoundIcon className="size-4 text-white" />
           ) : (
             <FileTextIcon className="size-4 text-white" />
+          )}
+          {!secret.command_id && (
+            <span
+              className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-background text-foreground/80 border border-border shadow-xs"
+              title="Global"
+            >
+              <GlobeIcon className="size-2 text-muted-foreground" />
+            </span>
           )}
         </div>
         <div className="min-w-0 flex-1 overflow-hidden">

@@ -263,3 +263,26 @@ describe("Respond to webhook", () => {
     }
   });
 });
+
+describe("Send API Request URL", () => {
+  const schema = getNodeValues("action_http_request").dataSchema!;
+
+  it("allows valid URLs and templated URLs with placeholders", () => {
+    for (const [url, valid] of [
+      ["https://example.com/api", true],
+      ["http://localhost:8080", true],
+      ["{{secrets.testurl}}", true],
+      ["{{values.testurl}}", true],
+      ["https://example.com/?token={{secrets.TOKEN}}", true],
+      ["https://{{secrets.HOST}}/path", true],
+      ["not a url", false],
+      ["ftp://example.com", false],
+      ["", false],
+    ] as const) {
+      expect(
+        schema.safeParse({ http_request_data: { url, method: "GET" } }).success,
+        url
+      ).toBe(valid);
+    }
+  });
+});

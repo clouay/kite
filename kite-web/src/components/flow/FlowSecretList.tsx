@@ -349,8 +349,7 @@ function FlowSecretTile({
           </div>
           <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0 overflow-hidden mt-0.5">
             <span className="flex-none whitespace-nowrap">
-              {secret.command_id ? "Command" : "Global"}{" "}
-              {secret.is_secret ? "secret" : "value"}
+              {secret.is_secret ? "Secret" : "Value"}
             </span>
             <span className="flex-none">·</span>
             <Tooltip>

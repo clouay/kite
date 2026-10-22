@@ -63,7 +63,9 @@ func (c *Client) CreateAppSecret(ctx context.Context, secret *model.AppSecret) (
 	row, err := c.Q.CreateAppSecret(ctx, pgmodel.CreateAppSecretParams{
 		ID:             secret.ID,
 		AppID:          secret.AppID,
+		CommandID:      pgtype.Text{String: secret.CommandID, Valid: secret.CommandID != ""},
 		Name:           pgtype.Text{String: secret.Name, Valid: true},
+		IsSecret:       secret.IsSecret,
 		ValueEncrypted: secret.ValueEncrypted,
 		CreatedAt:      pgtype.Timestamp{Time: secret.CreatedAt.UTC(), Valid: true},
 		UpdatedAt:      pgtype.Timestamp{Time: secret.UpdatedAt.UTC(), Valid: true},
@@ -79,6 +81,7 @@ func (c *Client) UpdateAppSecret(ctx context.Context, secret *model.AppSecret) (
 		AppID:          secret.AppID,
 		ID:             secret.ID,
 		Name:           pgtype.Text{String: secret.Name, Valid: true},
+		IsSecret:       secret.IsSecret,
 		ValueEncrypted: secret.ValueEncrypted,
 		UpdatedAt:      pgtype.Timestamp{Time: secret.UpdatedAt.UTC(), Valid: true},
 	})
@@ -106,7 +109,9 @@ func rowToAppSecret(row pgmodel.AppSecret) *model.AppSecret {
 	return &model.AppSecret{
 		ID:               row.ID,
 		AppID:            row.AppID,
+		CommandID:        row.CommandID.String,
 		Name:             row.Name.String,
+		IsSecret:         row.IsSecret,
 		AppIntegrationID: row.AppIntegrationID.String,
 		ValueEncrypted:   row.ValueEncrypted,
 		CreatedAt:        row.CreatedAt.Time,

@@ -3,7 +3,6 @@ import {
   ReactNode,
   useContext,
   useEffect,
-  useMemo,
   useState,
 } from "react";
 import { create, useStore } from "zustand";
@@ -23,6 +22,8 @@ export type FlowContextType = (typeof flowContextTypes)[number];
 export interface FlowContextStore {
   type: FlowContextType;
   setType(type: FlowContextType): void;
+  commandId?: string;
+  setCommandId(commandId?: string): void;
   // The blocks the flow AI changed in its last answer, which stand out until
   // the user clicks into the editor.
   aiChangedNodeIds: string[];
@@ -31,10 +32,12 @@ export interface FlowContextStore {
 
 export const createFlowContextStore = () => {
   return create<FlowContextStore>()(
-    immer((set, get) => ({
+    immer((set) => ({
       type: "command",
+      commandId: undefined,
 
       setType: (type) => set({ type }),
+      setCommandId: (commandId) => set({ commandId }),
       aiChangedNodeIds: [],
       setAIChangedNodeIds: (ids) => set({ aiChangedNodeIds: ids }),
     }))
@@ -48,15 +51,21 @@ const FlowContextStoreContext = createContext<ReturnType<
 export function FlowContextStoreProvider({
   children,
   type,
+  commandId,
 }: {
   children: ReactNode;
   type: FlowContextType;
+  commandId?: string;
 }) {
   const [contextStore] = useState(() => createFlowContextStore());
 
   useEffect(() => {
     contextStore.getState().setType(type);
   }, [type, contextStore]);
+
+  useEffect(() => {
+    contextStore.getState().setCommandId(commandId);
+  }, [commandId, contextStore]);
 
   return (
     <FlowContextStoreContext.Provider value={contextStore}>

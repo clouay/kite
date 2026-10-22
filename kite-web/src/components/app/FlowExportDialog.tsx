@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,12 +14,12 @@ import LoadingButton from "../common/LoadingButton";
 import { ShareCodeDisplay, ShareCodePanel } from "./ShareCode";
 import { useShareCodeCreateMutation } from "@/lib/api/mutations";
 import { useAppId } from "@/lib/hooks/params";
-import { useMessages } from "@/lib/hooks/api";
+import { useAppSecrets, useMessages } from "@/lib/hooks/api";
 import { collectReferencedMessages } from "@/lib/flow/messageTemplates";
+import { getReferencedSecrets } from "@/lib/flow/secrets";
 import { FlowData } from "@/lib/types/flow.gen";
 import { BracesIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
 import { toast } from "sonner";
-import { track } from "@/lib/analytics";
 
 type ExportProps = {
   title: string;
@@ -60,14 +60,50 @@ function ExportForm({
   const appId = useAppId();
   const createMutation = useShareCodeCreateMutation(appId);
   const messages = useMessages();
+  const secrets = useAppSecrets();
 
   const bundledMessages = messages
     ? collectReferencedMessages(flows, messages, excludeMessageIds)
     : null;
-  const shareData =
-    bundledMessages && bundledMessages.length > 0
-      ? { ...baseShareData, messages: bundledMessages }
-      : baseShareData;
+
+  const bundledSecrets = useMemo(() => {
+    if (!bundledMessages) return null;
+    const allFlows = [
+      ...flows.filter((f): f is FlowData => Boolean(f)),
+      ...bundledMessages.flatMap((m) => Object.values(m.flow_sources ?? {})),
+    ];
+
+    const secretMap = new Map<
+      string,
+      { name: string; is_secret: boolean; scope: "cmd" | "global" }
+    >();
+
+    for (const flow of allFlows) {
+      for (const ref of getReferencedSecrets(flow)) {
+        const existing = (secrets ?? []).find(
+          (s) => s && s.name === ref.name
+        );
+        secretMap.set(ref.name, {
+          name: ref.name,
+          is_secret: existing ? existing.is_secret : !ref.usedOutsideHttp,
+          scope: existing?.command_id ? "cmd" : "global",
+        });
+      }
+    }
+
+    return Array.from(secretMap.values());
+  }, [bundledMessages, flows, secrets]);
+
+  const shareData = useMemo(() => {
+    const next = { ...baseShareData };
+    if (bundledMessages && bundledMessages.length > 0) {
+      next.messages = bundledMessages;
+    }
+    if (bundledSecrets && bundledSecrets.length > 0) {
+      next.secrets = bundledSecrets;
+    }
+    return next;
+  }, [baseShareData, bundledMessages, bundledSecrets]);
 
   const bundledNote =
     bundledMessages && bundledMessages.length > 0
@@ -88,7 +124,6 @@ function ExportForm({
         onSuccess: (res) => {
           if (res.success) {
             setCode(res.data.code);
-            track("flow_exported", { kind: type, via: "share_code" });
           } else {
             toast.error(
               `Failed to generate share code: ${res.error.message} (${res.error.code})`
@@ -126,13 +161,7 @@ function ExportForm({
             <KeyRoundIcon className="mr-2 h-4 w-4" />
             Use share code
           </Button>
-          <Button
-            onClick={() => {
-              copy(json);
-              track("flow_exported", { kind: type, via: "json" });
-            }}
-            disabled={!bundledMessages}
-          >
+          <Button onClick={() => copy(json)} disabled={!bundledMessages}>
             <CopyIcon className="mr-2 h-4 w-4" />
             Copy JSON
           </Button>

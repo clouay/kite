@@ -76,6 +76,7 @@ function InnerFlowPage({
           hasUnsavedChanges={hasUnsavedChanges}
           isSaving={isSaving}
           command={command}
+          context={context}
           onSave={onSave}
           onExit={handleExitRequest}
           chatOpen={chatOpen}
@@ -86,6 +87,7 @@ function InnerFlowPage({
         flowData={flowData}
         logs={logs}
         context={context}
+        command={command}
         onChange={onChange}
         chatOpen={chatOpen}
         onChatOpenChange={setChatOpen}

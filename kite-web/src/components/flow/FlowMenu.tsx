@@ -3,18 +3,20 @@ import { cn } from "@/lib/utils";
 import {
   BoxIcon,
   GitCompareIcon,
+  KeyRoundIcon,
   LucideIcon,
   MessageSquareWarningIcon,
   TextCursorInputIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import FlowLogList from "./FlowLogList";
 import FlowNodeEditor from "./FlowNodeEditor";
 import FlowNodeExplorer from "./FlowNodeExplorer";
+import FlowSecretList from "./FlowSecretList";
 import { useStoreApi } from "@xyflow/react";
 
-type Tab = "action" | "control_flow" | "option" | "logs";
+type Tab = "action" | "control_flow" | "option" | "secrets" | "logs";
 
 export default function FlowMenu({
   selectedNodeId,
@@ -63,6 +65,13 @@ export default function FlowMenu({
         </div>
         <div className="flex-none flex flex-col items-center gap-1">
           <Tab
+            id="secrets"
+            icon={KeyRoundIcon}
+            title="Secrets & Values"
+            tab={tab}
+            setTab={wrappedSetTab}
+          />
+          <Tab
             id="logs"
             icon={MessageSquareWarningIcon}
             title="Logs"
@@ -75,6 +84,8 @@ export default function FlowMenu({
         {(tab === "action" || tab === "control_flow" || tab === "option") && (
           <FlowNodeExplorer category={tab} />
         )}
+
+        {tab === "secrets" && <FlowSecretList />}
 
         {tab === "logs" && <FlowLogList logs={logs} />}
 

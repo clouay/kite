@@ -9,7 +9,9 @@ import "time"
 type AppSecret struct {
 	ID               string
 	AppID            string
+	CommandID        string
 	Name             string
+	IsSecret         bool
 	AppIntegrationID string
 	IntegrationID    string
 	ValueEncrypted   string

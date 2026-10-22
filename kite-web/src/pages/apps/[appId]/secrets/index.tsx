@@ -16,9 +16,10 @@ export default function AppSecretsPage() {
       <div>
         <h1 className="text-lg font-semibold md:text-2xl mb-1">Secrets</h1>
         <p className="text-muted-foreground text-sm">
-          Store API keys and other values your API request blocks need, so they
-          aren&apos;t part of your flows when you share or export them. Everyone
-          who can edit the app can use them, but nobody can read them back.{" "}
+          Store global and command-specific API keys, secrets, and configuration
+          values, so they aren&apos;t part of your flows when you share or
+          export them. True secrets are censored and can&apos;t be read back
+          once saved, while non-secret values stay editable across your blocks.{" "}
           <a
             href={`${env.NEXT_PUBLIC_DOCS_LINK}/reference/secrets`}
             target="_blank"

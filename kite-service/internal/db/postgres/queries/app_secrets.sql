@@ -1,5 +1,5 @@
 -- name: GetAppSecretsByApp :many
-SELECT * FROM app_secrets WHERE app_id = $1 AND name IS NOT NULL ORDER BY name;
+SELECT * FROM app_secrets WHERE app_id = $1 AND name IS NOT NULL ORDER BY name, command_id NULLS FIRST;
 
 -- name: GetAppSecret :one
 SELECT * FROM app_secrets WHERE app_id = $1 AND id = $2 AND name IS NOT NULL;
@@ -14,19 +14,22 @@ SELECT COUNT(*) FROM app_secrets WHERE app_id = $1 AND name IS NOT NULL;
 INSERT INTO app_secrets (
     id,
     app_id,
+    command_id,
     name,
+    is_secret,
     value_encrypted,
     created_at,
     updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7, $8
 ) RETURNING *;
 
 -- name: UpdateAppSecret :one
 UPDATE app_secrets SET
     name = $3,
-    value_encrypted = $4,
-    updated_at = $5
+    is_secret = $4,
+    value_encrypted = $5,
+    updated_at = $6
 WHERE app_id = $1 AND id = $2 AND name IS NOT NULL RETURNING *;
 
 -- name: DeleteAppSecret :execrows

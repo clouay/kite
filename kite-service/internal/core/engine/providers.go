@@ -922,22 +922,87 @@ func (p *RobloxProvider) UsersByUsername(ctx context.Context, username string) (
 	return v.Data, nil
 }
 
+type cachedSecret struct {
+	value          string
+	valueEncrypted string
+	isSecret       bool
+	hasValue       bool
+	decrypted      bool
+}
+
 type SecretProvider struct {
 	appID          string
+	commandID      string
 	appSecretStore store.AppSecretStore
 	tokenCrypt     *util.SymmetricCrypt
 
 	// Decrypted secrets, as a flow can send the same request many times.
 	mu     sync.Mutex
-	values map[string]string
+	values map[string]cachedSecret
 }
 
-func NewSecretProvider(appID string, appSecretStore store.AppSecretStore, tokenCrypt *util.SymmetricCrypt) *SecretProvider {
+func NewSecretProvider(appID string, commandID string, appSecretStore store.AppSecretStore, tokenCrypt *util.SymmetricCrypt) *SecretProvider {
 	return &SecretProvider{
 		appID:          appID,
+		commandID:      commandID,
 		appSecretStore: appSecretStore,
 		tokenCrypt:     tokenCrypt,
 	}
+}
+
+func (p *SecretProvider) loadMetadata(ctx context.Context, names []string) error {
+	var missing []string
+	for _, name := range names {
+		if _, ok := p.values[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	secrets, err := p.appSecretStore.AppSecretsByNames(ctx, p.appID, missing)
+	if err != nil {
+		return fmt.Errorf("failed to get secrets: %w", err)
+	}
+
+	if p.values == nil {
+		p.values = make(map[string]cachedSecret, len(secrets))
+	}
+
+	selected := make(map[string]*model.AppSecret, len(secrets))
+	for _, secret := range secrets {
+		if secret.CommandID != "" && secret.CommandID != p.commandID {
+			continue
+		}
+		prev, exists := selected[secret.Name]
+		if !exists || (prev.CommandID == "" && secret.CommandID == p.commandID) {
+			selected[secret.Name] = secret
+		}
+	}
+
+	for name, secret := range selected {
+		p.values[name] = cachedSecret{
+			valueEncrypted: secret.ValueEncrypted,
+			isSecret:       secret.IsSecret,
+			hasValue:       secret.ValueEncrypted != "",
+		}
+	}
+	return nil
+}
+
+func (p *SecretProvider) decryptEntry(name string, entry cachedSecret) (string, error) {
+	if entry.decrypted {
+		return entry.value, nil
+	}
+	value, err := p.tokenCrypt.DecryptString(entry.valueEncrypted)
+	if err != nil {
+		return "", fmt.Errorf("failed to decrypt secret %s: %w", name, err)
+	}
+	entry.value = value
+	entry.decrypted = true
+	p.values[name] = entry
+	return value, nil
 }
 
 // Secrets only decrypts the secrets a flow uses.
@@ -945,36 +1010,56 @@ func (p *SecretProvider) Secrets(ctx context.Context, names []string) (map[strin
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	var missing []string
-	for _, name := range names {
-		if _, ok := p.values[name]; !ok {
-			missing = append(missing, name)
-		}
-	}
-
-	if len(missing) > 0 {
-		secrets, err := p.appSecretStore.AppSecretsByNames(ctx, p.appID, missing)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get secrets: %w", err)
-		}
-
-		if p.values == nil {
-			p.values = make(map[string]string, len(secrets))
-		}
-		for _, secret := range secrets {
-			value, err := p.tokenCrypt.DecryptString(secret.ValueEncrypted)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decrypt secret %s: %w", secret.Name, err)
-			}
-			p.values[secret.Name] = value
-		}
+	if err := p.loadMetadata(ctx, names); err != nil {
+		return nil, err
 	}
 
 	res := make(map[string]string, len(names))
 	for _, name := range names {
-		if value, ok := p.values[name]; ok {
-			res[name] = value
+		entry, ok := p.values[name]
+		if !ok {
+			continue
 		}
+		if !entry.hasValue {
+			return nil, fmt.Errorf("secret %s has no value set", name)
+		}
+		value, err := p.decryptEntry(name, entry)
+		if err != nil {
+			return nil, err
+		}
+		res[name] = value
+	}
+	return res, nil
+}
+
+// NonSecrets resolves non-secret values (is_secret = false) for use in any flow
+// block, and rejects true secrets outside of HTTP request blocks without
+// decrypting them.
+func (p *SecretProvider) NonSecrets(ctx context.Context, names []string) (map[string]string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if err := p.loadMetadata(ctx, names); err != nil {
+		return nil, err
+	}
+
+	res := make(map[string]string, len(names))
+	for _, name := range names {
+		entry, ok := p.values[name]
+		if !ok {
+			continue
+		}
+		if entry.isSecret {
+			return nil, fmt.Errorf("secret %s cannot be used outside of HTTP request blocks", name)
+		}
+		if !entry.hasValue {
+			return nil, fmt.Errorf("secret %s has no value set", name)
+		}
+		value, err := p.decryptEntry(name, entry)
+		if err != nil {
+			return nil, err
+		}
+		res[name] = value
 	}
 	return res, nil
 }

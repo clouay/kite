@@ -3,6 +3,7 @@ import { getNodeValues } from "@/lib/flow/nodes";
 import { useReactFlow } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import {
+  KeyRoundIcon,
   ListTreeIcon,
   Maximize2Icon,
   MessageSquareWarningIcon,
@@ -19,6 +20,7 @@ interface Props {
   onAddBlock: () => void;
   onEditNode: () => void;
   onDeselectNode: () => void;
+  onOpenSecrets?: () => void;
   onOpenLogs: () => void;
   onFitView: () => void;
   onUndo?: () => void;
@@ -35,6 +37,7 @@ export default function FlowMobileBottomBar({
   onAddBlock,
   onEditNode,
   onDeselectNode,
+  onOpenSecrets,
   onOpenLogs,
   onFitView,
   onUndo,
@@ -134,6 +137,16 @@ export default function FlowMobileBottomBar({
           title="Auto arrange layout"
         >
           <ListTreeIcon className="size-4" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 rounded-full"
+          onClick={onOpenSecrets}
+          title="Secrets & Values"
+        >
+          <KeyRoundIcon className="size-4" />
         </Button>
 
         <Button

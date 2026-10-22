@@ -8,6 +8,7 @@ import (
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/utils/ws"
 	"github.com/kitecloud/kite/kite-service/pkg/eval"
+	"github.com/kitecloud/kite/kite-service/pkg/provider"
 )
 
 type FlowContext struct {
@@ -48,6 +49,21 @@ func NewContext(
 		return eval.NewThingEnv(state.GetTemporary(name)), nil
 	}
 	evalCtx.Patchers = append(evalCtx.Patchers, &nodeEvalPatcher{})
+
+	if nonSecretProvider, ok := providers.Secret.(provider.NonSecretProvider); ok && nonSecretProvider != nil {
+		evalCtx.Env["non_secret"] = func(name string) (any, error) {
+			values, err := nonSecretProvider.NonSecrets(ctx, []string{name})
+			if err != nil {
+				return nil, err
+			}
+			val, ok := values[name]
+			if !ok {
+				return nil, fmt.Errorf("the app has no secret named %s", name)
+			}
+			return val, nil
+		}
+		evalCtx.Patchers = append(evalCtx.Patchers, &secretEvalPatcher{})
+	}
 
 	return &FlowContext{
 		Context: ctx,

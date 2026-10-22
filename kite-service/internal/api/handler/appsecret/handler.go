@@ -10,6 +10,7 @@ import (
 	"github.com/kitecloud/kite/kite-service/internal/model"
 	"github.com/kitecloud/kite/kite-service/internal/store"
 	"github.com/kitecloud/kite/kite-service/internal/util"
+	"gopkg.in/guregu/null.v4"
 )
 
 type AppSecretHandler struct {
@@ -24,6 +25,23 @@ func NewAppSecretHandler(appSecretStore store.AppSecretStore, tokenCrypt *util.S
 	}
 }
 
+func (h *AppSecretHandler) toWire(secret *model.AppSecret) (*wire.AppSecret, error) {
+	if secret == nil {
+		return nil, nil
+	}
+
+	var decrypted null.String
+	if !secret.IsSecret && secret.ValueEncrypted != "" {
+		val, err := h.tokenCrypt.DecryptString(secret.ValueEncrypted)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt non-secret value: %w", err)
+		}
+		decrypted = null.NewString(val, true)
+	}
+
+	return wire.AppSecretToWire(secret, decrypted), nil
+}
+
 func (h *AppSecretHandler) HandleAppSecretList(c *handler.Context) (*wire.AppSecretListResponse, error) {
 	secrets, err := h.appSecretStore.AppSecretsByApp(c.Context(), c.App.ID)
 	if err != nil {
@@ -32,7 +50,11 @@ func (h *AppSecretHandler) HandleAppSecretList(c *handler.Context) (*wire.AppSec
 
 	res := make([]*wire.AppSecret, len(secrets))
 	for i, secret := range secrets {
-		res[i] = wire.AppSecretToWire(secret)
+		w, err := h.toWire(secret)
+		if err != nil {
+			return nil, err
+		}
+		res[i] = w
 	}
 	return &res, nil
 }
@@ -48,15 +70,26 @@ func (h *AppSecretHandler) HandleAppSecretCreate(c *handler.Context, req wire.Ap
 		}
 	}
 
-	value, err := h.tokenCrypt.EncryptString(req.Value)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt secret: %w", err)
+	isSecret := true
+	if req.IsSecret != nil {
+		isSecret = *req.IsSecret
+	}
+
+	var value string
+	if req.Value != "" {
+		var err error
+		value, err = h.tokenCrypt.EncryptString(req.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt secret: %w", err)
+		}
 	}
 
 	secret, err := h.appSecretStore.CreateAppSecret(c.Context(), &model.AppSecret{
 		ID:             util.UniqueID(),
 		AppID:          c.App.ID,
+		CommandID:      req.CommandID.String,
 		Name:           req.Name,
+		IsSecret:       isSecret,
 		ValueEncrypted: value,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
@@ -68,7 +101,7 @@ func (h *AppSecretHandler) HandleAppSecretCreate(c *handler.Context, req wire.Ap
 		return nil, fmt.Errorf("failed to create secret: %w", err)
 	}
 
-	return wire.AppSecretToWire(secret), nil
+	return h.toWire(secret)
 }
 
 func (h *AppSecretHandler) HandleAppSecretUpdate(c *handler.Context, req wire.AppSecretUpdateRequest) (*wire.AppSecretUpdateResponse, error) {
@@ -78,6 +111,13 @@ func (h *AppSecretHandler) HandleAppSecretUpdate(c *handler.Context, req wire.Ap
 			return nil, handler.ErrNotFound("unknown_secret", "Secret not found")
 		}
 		return nil, fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	if req.IsSecret != nil {
+		if secret.IsSecret && !*req.IsSecret && !req.Value.Valid && secret.ValueEncrypted != "" {
+			return nil, handler.ErrBadRequest("value_required", "A new value is required when converting a secret to a non-secret")
+		}
+		secret.IsSecret = *req.IsSecret
 	}
 
 	secret.Name = req.Name
@@ -100,7 +140,7 @@ func (h *AppSecretHandler) HandleAppSecretUpdate(c *handler.Context, req wire.Ap
 		return nil, fmt.Errorf("failed to update secret: %w", err)
 	}
 
-	return wire.AppSecretToWire(secret), nil
+	return h.toWire(secret)
 }
 
 func (h *AppSecretHandler) HandleAppSecretDelete(c *handler.Context) (*wire.AppSecretDeleteResponse, error) {

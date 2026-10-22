@@ -3,6 +3,7 @@ package flow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,6 +27,24 @@ func (p *secretTestProvider) Secrets(ctx context.Context, names []string) (map[s
 	res := map[string]string{}
 	for _, name := range names {
 		if v, ok := p.values[name]; ok {
+			res[name] = v
+		}
+	}
+	return res, nil
+}
+
+type nonSecretTestProvider struct {
+	secretTestProvider
+	nonSecrets map[string]string
+}
+
+func (p *nonSecretTestProvider) NonSecrets(ctx context.Context, names []string) (map[string]string, error) {
+	res := map[string]string{}
+	for _, name := range names {
+		if _, isSecret := p.values[name]; isSecret {
+			return nil, fmt.Errorf("secret %s cannot be used outside of HTTP request blocks", name)
+		}
+		if v, ok := p.nonSecrets[name]; ok {
 			res[name] = v
 		}
 	}
@@ -126,6 +145,43 @@ func TestHTTPRequestRedactsSecrets(t *testing.T) {
 
 // Secrets only work in requests, so they can't be sent in a message or
 // written to the logs by accident.
+func TestNonSecretsWorkOutsideRequestsWhileTrueSecretsAreRejected(t *testing.T) {
+	secrets := &nonSecretTestProvider{
+		secretTestProvider: secretTestProvider{
+			values: map[string]string{"API_KEY": "s3cr3t"},
+		},
+		nonSecrets: map[string]string{"PUBLIC_TEXT": "hello world"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	c := NewContext(
+		ctx,
+		5*time.Second,
+		&TestContextData{},
+		FlowProviders{
+			Discord: &provider.MockDiscordProvider{},
+			HTTP:    &httpTestProvider{},
+			Log:     &provider.MockLogProvider{},
+			Secret:  secrets,
+		}, FlowContextLimits{
+			MaxStackDepth: 10,
+			MaxOperations: 1000,
+			MaxCredits:    1000,
+		},
+		eval.NewContext(eval.Env{}),
+		nil,
+	)
+	t.Cleanup(c.Cancel)
+
+	okNode := &CompiledFlowNode{ID: "1", Type: FlowNodeTypeActionLog, Data: FlowNodeData{LogMessage: "msg: {{secrets.PUBLIC_TEXT}}"}}
+	require.NoError(t, okNode.Execute(c))
+
+	blockedNode := &CompiledFlowNode{ID: "1", Type: FlowNodeTypeActionLog, Data: FlowNodeData{LogMessage: "{{secrets.API_KEY}}"}}
+	err := blockedNode.Execute(c)
+	require.ErrorContains(t, err, "cannot be used outside of HTTP request blocks")
+}
+
 func TestSecretsOnlyInRequests(t *testing.T) {
 	secrets := &secretTestProvider{values: map[string]string{"API_KEY": "s3cr3t"}}
 	node := &CompiledFlowNode{ID: "1", Type: FlowNodeTypeActionLog, Data: FlowNodeData{LogMessage: "{{secrets.API_KEY}}"}}

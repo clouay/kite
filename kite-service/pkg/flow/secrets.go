@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"github.com/expr-lang/expr/ast"
 	"errors"
 	"fmt"
 	"maps"
@@ -97,7 +98,15 @@ func newFlowSecrets(ctx *FlowContext, templates ...string) (*flowSecrets, error)
 	res.values = values
 	res.evalCtx = eval.Context{
 		Env:      maps.Clone(ctx.EvalCtx.Env),
-		Patchers: ctx.EvalCtx.Patchers,
+		Patchers: func() []ast.Visitor {
+		var patchers []ast.Visitor
+		for _, p := range ctx.EvalCtx.Patchers {
+			if _, isSecretPatcher := p.(*secretEvalPatcher); !isSecretPatcher {
+				patchers = append(patchers, p)
+			}
+		}
+		return patchers
+	}(),
 	}
 	if res.evalCtx.Env == nil {
 		res.evalCtx.Env = eval.Env{}

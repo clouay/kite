@@ -9,6 +9,13 @@ type SecretProvider interface {
 	Secrets(ctx context.Context, names []string) (map[string]string, error)
 }
 
+// NonSecretProvider is an optional extension of SecretProvider that resolves
+// non-secret values (is_secret = false) for use in non-HTTP flow blocks, while
+// rejecting true secrets outside of HTTP request blocks.
+type NonSecretProvider interface {
+	NonSecrets(ctx context.Context, names []string) (map[string]string, error)
+}
+
 type MockSecretProvider struct{}
 
 func (p *MockSecretProvider) Secrets(ctx context.Context, names []string) (map[string]string, error) {

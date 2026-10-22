@@ -101,11 +101,16 @@ export interface AppEntity {
  */
 export const MaxAppSecretValueLength = 4096;
 /**
- * AppSecret never includes the value, it can't be read back once saved.
+ * AppSecret only includes Value when IsSecret is false; true secrets can't be
+ * read back once saved.
  */
 export interface AppSecret {
   id: string;
   name: string;
+  command_id: null | string;
+  is_secret: boolean;
+  has_value: boolean;
+  value: null | string;
   created_at: string /* RFC3339 */;
   updated_at: string /* RFC3339 */;
 }
@@ -113,15 +118,19 @@ export type AppSecretListResponse = (AppSecret | undefined)[];
 export interface AppSecretCreateRequest {
   name: string;
   value: string;
+  command_id: null | string;
+  is_secret?: boolean;
+  allow_empty: boolean;
 }
 export type AppSecretCreateResponse = AppSecret;
 /**
- * AppSecretUpdateRequest renames a secret, and replaces its value if one is
- * given.
+ * AppSecretUpdateRequest renames a secret, updates its secret flag, and
+ * replaces its value if one is given.
  */
 export interface AppSecretUpdateRequest {
   name: string;
   value: null | string;
+  is_secret?: boolean;
 }
 export type AppSecretUpdateResponse = AppSecret;
 export type AppSecretDeleteResponse = Empty;

@@ -23,7 +23,7 @@ import {
 import { apiRequest } from "@/lib/api/client";
 import { useAppId } from "@/lib/hooks/params";
 import { useAppSecrets, useMessages, useVariables } from "@/lib/hooks/api";
-import { getReferencedSecretNames } from "@/lib/flow/secrets";
+import { getReferencedSecrets } from "@/lib/flow/secrets";
 import {
   SharedMessage,
   flowSourcesReference,
@@ -33,13 +33,14 @@ import {
 } from "@/lib/flow/messageTemplates";
 import { FlowData } from "@/lib/types/flow.gen";
 import {
+  AppSecretCreateResponse,
   MessageDeleteResponse,
   MessageUpdateResponse,
 } from "@/lib/types/wire.gen";
 import { toast } from "sonner";
 import { ShareCodeInput, ShareCodePanel } from "./ShareCode";
 import { BracesIcon, KeyRoundIcon } from "lucide-react";
-import { track } from "@/lib/analytics";
+import { useTrack } from "@/lib/analytics";
 
 const kinds = {
   command: {
@@ -61,12 +62,20 @@ const kinds = {
 
 type Kind = keyof typeof kinds;
 
+type SharedSecretMeta = {
+  name: string;
+  is_secret?: boolean;
+  scope?: "cmd" | "global";
+};
+
 type ShareData = {
   flow_source?: FlowData;
   source?: string;
   message?: SharedMessage;
   // Message templates the flow (or message) uses, exported along with it.
   messages?: SharedMessage[];
+  // Required secret/value placeholders metadata (never values).
+  secrets?: SharedSecretMeta[];
 };
 
 export default function FlowImportDialog({
@@ -109,6 +118,7 @@ function ImportForm({
   const secrets = useAppSecrets();
 
   const commandsImportMutation = useCommandsImportMutation(appId);
+  const track = useTrack();
   const eventListenersImportMutation = useEventListenersImportMutation(appId);
   const messagesImportMutation = useMessagesImportMutation(appId);
   const shareCodeResolveMutation = useShareCodeResolveMutation();
@@ -254,10 +264,44 @@ function ImportForm({
         ...(flow ? [flow] : []),
         ...shared.flatMap((m) => Object.values(m.flow_sources ?? {})),
       ];
-      const secretNames = new Set(secrets?.map((s) => s?.name));
-      const missingSecrets = Array.from(
-        new Set(usedFlows.flatMap((f) => getReferencedSecretNames(f)))
-      ).filter((name) => !secretNames.has(name));
+
+      const requiredMap = new Map<
+        string,
+        { name: string; is_secret: boolean; scope: "cmd" | "global" }
+      >();
+
+      for (const f of usedFlows) {
+        for (const ref of getReferencedSecrets(f)) {
+          requiredMap.set(ref.name, {
+            name: ref.name,
+            is_secret: !ref.usedOutsideHttp,
+            scope: kind === "command" ? "cmd" : "global",
+          });
+        }
+      }
+
+      if (Array.isArray(parsed?.secrets)) {
+        for (const meta of parsed.secrets) {
+          if (meta && typeof meta.name === "string" && meta.name) {
+            const prev = requiredMap.get(meta.name);
+            requiredMap.set(meta.name, {
+              name: meta.name,
+              is_secret:
+                typeof meta.is_secret === "boolean"
+                  ? meta.is_secret
+                  : prev?.is_secret ?? true,
+              scope:
+                meta.scope === "cmd" || meta.scope === "global"
+                  ? meta.scope
+                  : prev?.scope ?? (kind === "command" ? "cmd" : "global"),
+            });
+          }
+        }
+      }
+
+      const globalSecretNames = new Set(
+        secrets?.filter((s) => s && !s.command_id).map((s) => s!.name)
+      );
 
       let removed = await importMessages(
         shared,
@@ -298,11 +342,46 @@ function ImportForm({
           );
         }
         importedId = res.data[0]?.id;
+        if (kind === "command") {
+          track("command_created", { source: "import" });
+        }
       }
-      track(`${kind}_created`, {
-        source: "import",
-        via: useJson ? "json" : "share_code",
-      });
+
+      // Create blank secrets/values marked as needing values for required placeholders.
+      const toCreateSecrets = Array.from(requiredMap.values()).filter(
+        (item) => !globalSecretNames.has(item.name) || item.scope === "cmd"
+      );
+
+      const createdBlankNames: string[] = [];
+      if (toCreateSecrets.length > 0) {
+        await Promise.allSettled(
+          toCreateSecrets.map(async (item) => {
+            const targetCommandId =
+              kind === "command" && importedId ? importedId : null;
+            if (!targetCommandId && globalSecretNames.has(item.name)) {
+              return;
+            }
+            const createRes = await apiRequest<AppSecretCreateResponse>(
+              `/v1/apps/${appId}/secrets`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: item.name,
+                  value: "",
+                  command_id: targetCommandId,
+                  is_secret: item.is_secret,
+                  allow_empty: true,
+                }),
+              }
+            );
+            if (createRes.success) {
+              createdBlankNames.push(item.name);
+            }
+          })
+        );
+        queryClient.invalidateQueries({ queryKey: ["apps", appId, "secrets"] });
+      }
 
       const extraTemplates = idMap.size - (kind === "message" ? 1 : 0);
       toast.success(
@@ -315,11 +394,11 @@ function ImportForm({
           `${removed} block(s) referenced variables or message templates from another app, reselect them in the editor.`
         );
       }
-      if (missingSecrets.length > 0) {
+      if (createdBlankNames.length > 0) {
         toast.warning(
-          `This ${label} uses secrets your app doesn't have: ${missingSecrets.join(
+          `Created ${createdBlankNames.length} blank placeholder(s) (${createdBlankNames.join(
             ", "
-          )}. Create them under Secrets.`
+          )}) that need values set in Secrets.`
         );
       }
       onImported();

@@ -1,58 +1,77 @@
-import { getBlockDefinition } from "@/lib/blocks";
 import { useFlowContext } from "@/lib/flow/context";
 import { NodeData } from "@/lib/flow/dataSchema";
 import { getAvailablePlaceholders } from "@/lib/flow/placeholders";
 import { useAppSecrets } from "@/lib/hooks/api";
+import { AppSecret } from "@/lib/types/wire.gen";
 import { Node, useEdges, useNodes } from "@xyflow/react";
 import { VariableIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useRouter } from "next/router";
+import { useMemo, useState } from "react";
+import AppSecretDialog from "../app/AppSecretDialog";
 import PlaceholderExplorer from "../common/PlaceholderExplorer";
 
 export default function FlowPlaceholderExplorer({
   onSelect,
   hideBrackets,
-  field,
 }: {
   onSelect: (value: string) => void;
   hideBrackets?: boolean;
-  // The setting it inserts into, like http_request_data.url. The app's
-  // secrets are only offered for settings that can use them.
-  field?: string;
 }) {
+  const [addValueOpen, setAddValueOpen] = useState(false);
   const nodes = useNodes<Node<NodeData>>();
   const edges = useEdges();
   const contextType = useFlowContext((c) => c.type);
-  const selected = nodes.find((n) => n.selected);
+  const contextCommandId = useFlowContext((c) => c.commandId);
+  const router = useRouter();
+  const commandId =
+    contextCommandId ||
+    (typeof router.query.cmdId === "string" ? router.query.cmdId : undefined);
 
-  const allowsSecrets = !!getBlockDefinition(selected?.type)?.fields?.find(
-    (f) => f.name === field?.split(".")[0]
-  )?.secrets;
   const secrets = useAppSecrets();
+  const selectedNode = useMemo(() => nodes.find((n) => n.selected), [nodes]);
+  const isHttpNode = selectedNode?.type === "action_http_request";
 
-  // TODO: only compute when explorer is open
   const placeholders = useMemo(() => {
-    const res = getAvailablePlaceholders(
-      selected?.id,
+    const base = getAvailablePlaceholders(
+      selectedNode?.id,
       nodes,
       edges,
       contextType
     );
-    const names = allowsSecrets
-      ? secrets?.flatMap((s) => (s ? [s.name] : [])) ?? []
-      : [];
-    if (names.length === 0) return res;
 
-    return [
-      ...res,
-      {
-        label: "Secrets",
-        placeholders: names.map((name) => ({
-          label: name,
-          value: `secrets.${name}`,
-        })),
-      },
-    ];
-  }, [selected?.id, nodes, edges, contextType, allowsSecrets, secrets]);
+    const byName = new Map<string, AppSecret>();
+    for (const s of secrets ?? []) {
+      if (!s) continue;
+      if (!s.command_id) {
+        byName.set(s.name, s);
+      }
+    }
+    if (commandId) {
+      for (const s of secrets ?? []) {
+        if (s && s.command_id === commandId) {
+          byName.set(s.name, s);
+        }
+      }
+    }
+
+    const secretPlaceholders = Array.from(byName.values())
+      .filter((s) => isHttpNode || !s.is_secret)
+      .map((s) => ({
+        label: `${s.is_secret ? "Secret" : "Value"} '${s.name}' (${
+          s.command_id ? "Command" : "Global"
+        })`,
+        value: `secrets.${s.name}`,
+      }));
+
+    if (secretPlaceholders.length > 0) {
+      base.push({
+        label: "Secrets & Values",
+        placeholders: secretPlaceholders,
+      });
+    }
+
+    return base;
+  }, [selectedNode?.id, nodes, edges, contextType, secrets, commandId, isHttpNode]);
 
   return (
     <div className="absolute top-1.5 right-1.5 z-20">
@@ -60,12 +79,25 @@ export default function FlowPlaceholderExplorer({
         onSelect={onSelect}
         placeholders={placeholders}
         hideBrackets={hideBrackets}
+        onAddValue={() => setAddValueOpen(true)}
       >
         <VariableIcon
           className="h-5.5 w-5.5 text-muted-foreground hover:text-foreground cursor-pointer"
           role="button"
         />
       </PlaceholderExplorer>
+      <AppSecretDialog
+        open={addValueOpen}
+        onOpenChange={setAddValueOpen}
+        commandId={commandId}
+        defaultCommandId={commandId ?? null}
+        defaultIsSecret={isHttpNode}
+        onCreated={(secret) => {
+          if (isHttpNode || !secret.is_secret) {
+            onSelect(`secrets.${secret.name}`);
+          }
+        }}
+      />
     </div>
   );
 }

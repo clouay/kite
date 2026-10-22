@@ -19,7 +19,8 @@ import {
   Placeholder,
   PlaceholderGroup,
 } from "@/lib/flow/placeholders";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
+import { Button } from "../ui/button";
 import { defaultFilter } from "cmdk";
 
 const backValue = "$back";
@@ -38,6 +39,7 @@ export default function PlaceholderExplorer({
   tabs,
   onTabChange,
   hideBrackets,
+  onAddValue,
 }: {
   children: ReactNode;
   onSelect: (value: string) => void;
@@ -49,6 +51,7 @@ export default function PlaceholderExplorer({
   }[];
   onTabChange?: (value: string) => void;
   hideBrackets?: boolean;
+  onAddValue?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -350,6 +353,23 @@ export default function PlaceholderExplorer({
               ))}
             </CommandList>
           </div>
+          {onAddValue && (
+            <div className="border-t p-1.5 flex items-center justify-end bg-muted/20">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={() => {
+                  setOpen(false);
+                  onAddValue();
+                }}
+              >
+                <PlusIcon className="size-3.5" />
+                Add value
+              </Button>
+            </div>
+          )}
           {highlighted && (
             <div className="border-t px-3 py-2 text-xs">
               {highlighted.fields?.length ? (

@@ -8,7 +8,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import {
   Form,
   FormControl,
@@ -27,49 +27,130 @@ import { toast } from "sonner";
 import { setValidationErrors } from "@/lib/form";
 import LoadingButton from "../common/LoadingButton";
 import { useAppId } from "@/lib/hooks/params";
-import { AppSecret } from "@/lib/types/wire.gen";
-import { track } from "@/lib/analytics";
+import { AppSecret, Command } from "@/lib/types/wire.gen";
+import { Checkbox } from "../ui/checkbox";
+import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import env from "@/lib/env/client";
 
 interface FormFields {
   name: string;
   value: string;
+  is_secret: boolean;
+  scope: "global" | "cmd";
+  command_id: string;
 }
 
-// Creates a secret, or edits one when given. Values can't be read back, so an
-// existing secret's value is only replaced when a new one is entered.
+// Creates a secret or non-secret value, or edits one when given. True secrets
+// can't be read back, so an existing secret's value is blank when editing and
+// only replaced when a new one is entered. Non-secrets show their existing
+// value in plain text.
 export default function AppSecretDialog({
   children,
   secret,
+  defaultName = "",
+  defaultCommandId = null,
+  defaultIsSecret = true,
+  commandId,
+  commands,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  onCreated,
 }: {
-  children: ReactNode;
+  children?: ReactNode;
   secret?: AppSecret;
+  defaultName?: string;
+  defaultCommandId?: string | null;
+  defaultIsSecret?: boolean;
+  commandId?: string;
+  commands?: (Command | undefined)[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onCreated?: (secret: AppSecret) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = controlledOnOpenChange ?? setUncontrolledOpen;
+
   const appId = useAppId();
 
   const createMutation = useAppSecretCreateMutation(appId);
   const updateMutation = useAppSecretUpdateMutation(appId, secret?.id ?? "");
   const pending = createMutation.isPending || updateMutation.isPending;
 
+  const getInitialValues = (): FormFields => {
+    const initialCmdId =
+      secret?.command_id ??
+      defaultCommandId ??
+      commandId ??
+      commands?.find(Boolean)?.id ??
+      "";
+    const isSecret = secret ? secret.is_secret : defaultIsSecret;
+    return {
+      name: secret?.name ?? defaultName,
+      value: secret && !secret.is_secret ? secret.value ?? "" : "",
+      is_secret: isSecret,
+      scope: secret
+        ? secret.command_id
+          ? "cmd"
+          : "global"
+        : defaultCommandId
+        ? "cmd"
+        : "global",
+      command_id: initialCmdId,
+    };
+  };
+
   const form = useForm<FormFields>({
-    defaultValues: { name: secret?.name ?? "", value: "" },
+    defaultValues: getInitialValues(),
   });
+
+  useEffect(() => {
+    if (open) {
+      form.reset(getInitialValues());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, secret, defaultName, defaultCommandId, defaultIsSecret, commandId]);
+
+  const watchedIsSecret = form.watch("is_secret");
+  const watchedScope = form.watch("scope");
 
   function onSubmit(data: FormFields) {
     if (pending) return;
 
+    const targetCommandId =
+      data.scope === "cmd" ? commandId || data.command_id || null : null;
+
+    if (!secret && data.scope === "cmd" && !targetCommandId) {
+      toast.error("Select a command for this command secret.");
+      return;
+    }
+
     const handlers = {
       onSuccess(res: Awaited<ReturnType<typeof createMutation.mutateAsync>>) {
         if (res.success) {
-          if (!secret) track("secret_created");
-          toast.success(secret ? "Secret updated!" : "Secret created!");
+          toast.success(
+            secret
+              ? data.is_secret
+                ? "Secret updated!"
+                : "Value updated!"
+              : data.is_secret
+              ? "Secret created!"
+              : "Value created!"
+          );
           setOpen(false);
-          form.reset({ name: secret ? res.data.name : "", value: "" });
+          onCreated?.(res.data);
         } else if (res.error.code === "validation_failed") {
           setValidationErrors(form, res.error.data);
         } else {
           toast.error(
-            `Failed to save secret: ${res.error.message} (${res.error.code})`
+            `Failed to save: ${res.error.message} (${res.error.code})`
           );
         }
       },
@@ -77,35 +158,116 @@ export default function AppSecretDialog({
 
     if (secret) {
       updateMutation.mutate(
-        { name: data.name, value: data.value || null },
+        {
+          name: data.name,
+          value: data.value ? data.value : null,
+          is_secret: data.is_secret,
+        },
         handlers
       );
     } else {
-      createMutation.mutate({ name: data.name, value: data.value }, handlers);
+      createMutation.mutate(
+        {
+          name: data.name,
+          value: data.value,
+          command_id: targetCommandId,
+          is_secret: data.is_secret,
+          allow_empty: false,
+        },
+        handlers
+      );
     }
   }
+
+  const canChooseScope =
+    !secret && (Boolean(commandId) || (commands && commands.length > 0));
 
   return (
     <Dialog
       open={open}
-      onOpenChange={(open) => {
-        setOpen(open);
-        // Entered values aren't kept around after closing.
-        if (!open) form.reset({ name: secret?.name ?? "", value: "" });
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) form.reset(getInitialValues());
       }}
     >
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{secret ? "Edit Secret" : "Create Secret"}</DialogTitle>
+          <DialogTitle>
+            {secret
+              ? watchedIsSecret
+                ? "Edit Secret"
+                : "Edit Value"
+              : watchedIsSecret
+              ? "Create Secret"
+              : "Create Value"}
+          </DialogTitle>
           <DialogDescription>
-            Use it in API request blocks as{" "}
-            <code>{`{{secrets.${form.watch("name") || "NAME"}}}`}</code>. The
-            value can&apos;t be read back once it&apos;s saved.
+            {watchedIsSecret ? (
+              <>
+                This secret is encrypted and hidden. You will not be able to
+                see this secret after saving.{" "}
+                <a
+                  href={`${env.NEXT_PUBLIC_DOCS_LINK}/reference/secrets#secrets`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4 hover:text-foreground text-primary"
+                >
+                  Learn more
+                </a>
+              </>
+            ) : (
+              <>
+                This value is stored in plain text and will remain visible
+                whenever you view or edit it.{" "}
+                <a
+                  href={`${env.NEXT_PUBLIC_DOCS_LINK}/reference/secrets#secrets`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4 hover:text-foreground text-primary"
+                >
+                  Learn more
+                </a>
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
+            {canChooseScope && (
+              <div className="grid gap-2">
+                <FormLabel>Scope</FormLabel>
+                <Tabs
+                  value={watchedScope}
+                  onValueChange={(v) =>
+                    form.setValue("scope", v as "global" | "cmd")
+                  }
+                >
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="global">Global</TabsTrigger>
+                    <TabsTrigger value="cmd">Command</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                {watchedScope === "cmd" && !commandId && commands && (
+                  <Select
+                    value={form.watch("command_id")}
+                    onValueChange={(v) => form.setValue("command_id", v)}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select command..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {commands.filter(Boolean).map((cmd) => (
+                        <SelectItem key={cmd!.id} value={cmd!.id}>
+                          /{cmd!.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
             <FormField
               control={form.control}
               name="name"
@@ -117,15 +279,44 @@ export default function AppSecretDialog({
                       type="text"
                       placeholder="API_KEY"
                       {...field}
-                      onChange={(e) =>
-                        field.onChange(e.target.value.toUpperCase())
-                      }
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="is_secret"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 bg-muted/20">
+                  <FormControl>
+                    <Checkbox checked={field.value} className="size-5 rounded-full mt-0.5 border-2 data-[state=checked]:border-primary"
+                      onCheckedChange={(checked) => {
+                        const next = Boolean(checked);
+                        field.onChange(next);
+                        if (secret && secret.is_secret && !next) {
+                          form.setValue("value", "");
+                        }
+                      }}
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="text-sm font-medium cursor-pointer">
+                      Secret value
+                    </FormLabel>
+                    <FormDescription className="text-xs">
+                      {field.value
+                        ? "Encrypted and hidden. You will not be able to see this secret after saving."
+                        : "Stored as plain text and remains visible when editing."}
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="value"
@@ -133,11 +324,27 @@ export default function AppSecretDialog({
                 <FormItem>
                   <FormLabel>Value</FormLabel>
                   <FormControl>
-                    <Input type="password" autoComplete="off" {...field} />
+                    <Input
+                      type={watchedIsSecret ? "password" : "text"}
+                      autoComplete="off"
+                      placeholder={
+                        secret && secret.is_secret && secret.has_value
+                          ? "Enter a new value to replace current secret"
+                          : watchedIsSecret
+                          ? "Enter secret value..."
+                          : "Enter value..."
+                      }
+                      {...field}
+                    />
                   </FormControl>
-                  {secret && (
+                  {secret && secret.has_value && watchedIsSecret && (
                     <FormDescription>
                       Leave empty to keep the current value.
+                    </FormDescription>
+                  )}
+                  {secret && !secret.has_value && (
+                    <FormDescription className="text-amber-500">
+                      This placeholder currently has no value set.
                     </FormDescription>
                   )}
                   <FormMessage />
@@ -146,7 +353,13 @@ export default function AppSecretDialog({
             />
             <DialogFooter>
               <LoadingButton type="submit" loading={pending}>
-                {secret ? "Save secret" : "Create secret"}
+                {secret
+                  ? watchedIsSecret
+                    ? "Save secret"
+                    : "Save value"
+                  : watchedIsSecret
+                  ? "Create secret"
+                  : "Create value"}
               </LoadingButton>
             </DialogFooter>
           </form>

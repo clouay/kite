@@ -6,10 +6,10 @@ import {
   useReactFlow,
   useStoreApi,
 } from "@xyflow/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import FlowEditor, { FlowEditorApi } from "./FlowEditor";
 import FlowMenu from "./FlowMenu";
-import { LogEntry } from "@/lib/types/wire.gen";
+import { Command, LogEntry } from "@/lib/types/wire.gen";
 import FlowAIChat from "./FlowAIChat";
 import { Button } from "../ui/button";
 import { SparklesIcon } from "lucide-react";
@@ -18,13 +18,14 @@ import FlowMobileBottomBar from "./FlowMobileBottomBar";
 import FlowAddBlockDrawer from "./FlowAddBlockDrawer";
 import FlowNodeEditorDrawer from "./FlowNodeEditorDrawer";
 import FlowLogsDrawer from "./FlowLogsDrawer";
+import FlowSecretsDrawer from "./FlowSecretsDrawer";
 import { useIsMobile } from "@/lib/hooks/use-mobile";
-import { track } from "@/lib/analytics";
 
 interface Props {
   flowData: FlowData;
   logs?: LogEntry[];
   context: FlowContextType;
+  command?: Command;
   onChange: () => void;
   // Whether the AI chat is open, if it's opened from outside, like the page's
   // header. Otherwise the editor shows its own button for it.
@@ -36,6 +37,7 @@ export default function Flow({
   flowData,
   logs,
   context,
+  command,
   onChange,
   chatOpen: controlledChatOpen,
   onChatOpenChange,
@@ -44,6 +46,7 @@ export default function Flow({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
   const [addBlockOpen, setAddBlockOpen] = useState(false);
+  const [secretsOpen, setSecretsOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -57,10 +60,6 @@ export default function Flow({
   const [chatMounted, setChatMounted] = useState(false);
   if (chatOpen && !chatMounted) setChatMounted(true);
   const closeChat = useCallback(() => setChatOpen(false), [setChatOpen]);
-
-  useEffect(() => {
-    if (chatOpen) track("flow_ai_opened", { context });
-  }, [chatOpen, context]);
 
   const { fitView } = useReactFlow();
   const store = useStoreApi();
@@ -115,7 +114,7 @@ export default function Flow({
   }, []);
 
   return (
-    <FlowContextStoreProvider type={context}>
+    <FlowContextStoreProvider type={context} commandId={command?.id}>
       {/* Keep toasts below the nav bar on mobile */}
       <style jsx global>{`
         @media (max-width: 767px) {
@@ -167,10 +166,11 @@ export default function Flow({
 
         <FlowMobileBottomBar
           selectedNodeId={selectedNodeId}
-          hidden={mobileEditorOpen || addBlockOpen || logsOpen}
+          hidden={mobileEditorOpen || addBlockOpen || secretsOpen || logsOpen}
           onAddBlock={() => setAddBlockOpen(true)}
           onEditNode={() => setMobileEditorOpen(true)}
           onDeselectNode={deselectNode}
+          onOpenSecrets={() => setSecretsOpen(true)}
           onOpenLogs={() => setLogsOpen(true)}
           onFitView={handleFitView}
           onUndo={handleUndo}
@@ -190,6 +190,11 @@ export default function Flow({
           nodeId={selectedNodeId}
           open={mobileEditorOpen && !!selectedNodeId}
           onOpenChange={setMobileEditorOpen}
+        />
+
+        <FlowSecretsDrawer
+          open={secretsOpen}
+          onOpenChange={setSecretsOpen}
         />
 
         <FlowLogsDrawer

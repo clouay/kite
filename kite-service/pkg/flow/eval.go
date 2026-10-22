@@ -153,3 +153,26 @@ func (p *nodeEvalPatcher) Visit(node *ast.Node) {
 		Arguments: []ast.Node{accessor.Property},
 	})
 }
+
+type secretEvalPatcher struct{}
+
+func (p *secretEvalPatcher) Visit(node *ast.Node) {
+	accessor, ok := (*node).(*ast.MemberNode)
+	if !ok {
+		return
+	}
+
+	parent, ok := (accessor.Node).(*ast.IdentifierNode)
+	if !ok {
+		return
+	}
+
+	if parent.Value != "secrets" {
+		return
+	}
+
+	ast.Patch(node, &ast.CallNode{
+		Callee:    &ast.IdentifierNode{Value: "non_secret"},
+		Arguments: []ast.Node{accessor.Property},
+	})
+}

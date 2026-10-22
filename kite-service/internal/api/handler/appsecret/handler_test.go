@@ -51,7 +51,7 @@ func (s *memoryStore) CountAppSecretsByApp(ctx context.Context, appID string) (i
 
 func (s *memoryStore) CreateAppSecret(ctx context.Context, secret *model.AppSecret) (*model.AppSecret, error) {
 	for _, other := range s.secrets {
-		if other.AppID == secret.AppID && other.Name == secret.Name {
+		if other.AppID == secret.AppID && other.CommandID == secret.CommandID && other.Name == secret.Name {
 			return nil, store.ErrAlreadyExists
 		}
 	}
@@ -60,6 +60,11 @@ func (s *memoryStore) CreateAppSecret(ctx context.Context, secret *model.AppSecr
 }
 
 func (s *memoryStore) UpdateAppSecret(ctx context.Context, secret *model.AppSecret) (*model.AppSecret, error) {
+	for _, other := range s.secrets {
+		if other.AppID == secret.AppID && other.ID != secret.ID && other.CommandID == secret.CommandID && other.Name == secret.Name {
+			return nil, store.ErrAlreadyExists
+		}
+	}
 	for i, other := range s.secrets {
 		if other.AppID == secret.AppID && other.ID == secret.ID {
 			s.secrets[i] = secret
@@ -126,12 +131,51 @@ func TestCreateSecretEncryptsAndNeverReturnsValue(t *testing.T) {
 		handler.TypedWithBody(s.handler.HandleAppSecretCreate))
 	require.Equal(t, http.StatusOK, code, res)
 	assert.NotContains(t, mustJSON(res), "s3cr3t")
+	data := res["data"].(map[string]any)
+	assert.Equal(t, true, data["is_secret"])
+	assert.Equal(t, true, data["has_value"])
+	assert.Nil(t, data["value"])
 
 	require.Len(t, s.store.secrets, 1)
 	assert.NotEqual(t, "s3cr3t", s.store.secrets[0].ValueEncrypted)
 	value, err := s.crypt.DecryptString(s.store.secrets[0].ValueEncrypted)
 	require.NoError(t, err)
 	assert.Equal(t, "s3cr3t", value)
+}
+
+func TestNonSecretReturnsValueAndPreventsSecretDowngradeWithoutNewValue(t *testing.T) {
+	s := newTestSetup(t)
+
+	code, res := s.request(t, 0, http.MethodPost, "/secrets", `{"name":"PUBLIC_URL","value":"https://kite.onl","is_secret":false,"command_id":"cmd1"}`,
+		handler.TypedWithBody(s.handler.HandleAppSecretCreate))
+	require.Equal(t, http.StatusOK, code, res)
+	data := res["data"].(map[string]any)
+	assert.Equal(t, false, data["is_secret"])
+	assert.Equal(t, true, data["has_value"])
+	assert.Equal(t, "https://kite.onl", data["value"])
+	assert.Equal(t, "cmd1", data["command_id"])
+
+	// True secret cannot be flipped to non-secret without providing a new value.
+	code, res = s.request(t, 0, http.MethodPost, "/secrets", `{"name":"SECRET_TOKEN","value":"topsecret","is_secret":true}`,
+		handler.TypedWithBody(s.handler.HandleAppSecretCreate))
+	require.Equal(t, http.StatusOK, code, res)
+	secretID := res["data"].(map[string]any)["id"].(string)
+
+	code, res = s.request(t, 0, http.MethodPatch, "/secrets/"+secretID, `{"name":"SECRET_TOKEN","value":null,"is_secret":false}`,
+		handler.TypedWithBody(s.handler.HandleAppSecretUpdate))
+	assert.Equal(t, http.StatusBadRequest, code)
+	assert.Equal(t, "value_required", res["error"].(map[string]any)["code"])
+}
+
+func TestBlankSecretOnCommandImport(t *testing.T) {
+	s := newTestSetup(t)
+
+	code, res := s.request(t, 0, http.MethodPost, "/secrets", `{"name":"IMPORTED_KEY","value":"","allow_empty":true,"command_id":"cmd1"}`,
+		handler.TypedWithBody(s.handler.HandleAppSecretCreate))
+	require.Equal(t, http.StatusOK, code, res)
+	data := res["data"].(map[string]any)
+	assert.Equal(t, false, data["has_value"])
+	assert.Equal(t, "cmd1", data["command_id"])
 }
 
 func TestCreateSecretLimits(t *testing.T) {
@@ -146,13 +190,17 @@ func TestCreateSecretLimits(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, code)
 	assert.Equal(t, "resource_limit", res["error"].(map[string]any)["code"])
 
-	// Names are unique per app.
+	// Names are unique per scope (global vs command).
 	code, res = s.request(t, 0, http.MethodPost, "/secrets", `{"name":"A","value":"1"}`, create)
 	assert.Equal(t, http.StatusBadRequest, code)
 	assert.Equal(t, "duplicate_name", res["error"].(map[string]any)["code"])
 
+	// Same name is allowed on a specific command scope.
+	code, _ = s.request(t, 0, http.MethodPost, "/secrets", `{"name":"A","value":"override","command_id":"cmd1"}`, create)
+	assert.Equal(t, http.StatusOK, code)
+
 	// Names are uppercase, like environment variables.
-	for _, name := range []string{"api_key", "1KEY", "API-KEY"} {
+	for _, name := range []string{"1KEY", "API-KEY", "a b"} {
 		code, _ = s.request(t, 0, http.MethodPost, "/secrets", `{"name":"`+name+`","value":"1"}`, create)
 		assert.Equal(t, http.StatusBadRequest, code, name)
 	}

@@ -28,7 +28,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 
-type ScopeTab = "all" | "cmd" | "global";
+type ScopeTab = "all" | "cmd" | "event" | "global";
 
 export default function FlowSecretList({
   hideHeader,
@@ -40,16 +40,22 @@ export default function FlowSecretList({
   const commandId =
     contextCommandId ||
     (typeof router.query.cmdId === "string" ? router.query.cmdId : undefined);
+  const contextEventListenerId = useFlowContext((c) => c.eventListenerId);
+  const eventListenerId =
+    contextEventListenerId ||
+    (typeof router.query.eventId === "string" ? router.query.eventId : undefined);
 
   const [scopeTab, setScopeTab] = useState<ScopeTab>(
-    commandId ? "cmd" : "all"
+    commandId ? "cmd" : eventListenerId ? "event" : "all"
   );
 
   useEffect(() => {
     if (commandId) {
       setScopeTab("cmd");
+    } else if (eventListenerId) {
+      setScopeTab("event");
     }
-  }, [commandId]);
+  }, [commandId, eventListenerId]);
 
   const secrets = useAppSecrets();
   const nodes = useNodes<Node<NodeData>>();
@@ -68,8 +74,16 @@ export default function FlowSecretList({
     [allSecrets, commandId]
   );
 
+  const eventSecrets = useMemo(
+    () =>
+      eventListenerId
+        ? allSecrets.filter((s) => s.event_listener_id === eventListenerId)
+        : [],
+    [allSecrets, eventListenerId]
+  );
+
   const globalSecrets = useMemo(
-    () => allSecrets.filter((s) => !s.command_id),
+    () => allSecrets.filter((s) => !s.command_id && !s.event_listener_id),
     [allSecrets]
   );
 
@@ -77,15 +91,21 @@ export default function FlowSecretList({
     const list =
       scopeTab === "cmd"
         ? cmdSecrets
+        : scopeTab === "event"
+        ? eventSecrets
         : scopeTab === "global"
         ? globalSecrets
-        : [...cmdSecrets, ...globalSecrets];
+        : [
+            ...(commandId ? cmdSecrets : []),
+            ...(eventListenerId ? eventSecrets : []),
+            ...globalSecrets,
+          ];
 
     return [...list].sort((a, b) => {
       if (a.has_value !== b.has_value) return a.has_value ? 1 : -1;
       return a.name.localeCompare(b.name);
     });
-  }, [scopeTab, cmdSecrets, globalSecrets]);
+  }, [scopeTab, cmdSecrets, eventSecrets, globalSecrets, commandId, eventListenerId]);
 
   const referenced = useMemo(
     () => getReferencedSecrets({ nodes: nodes as any, edges: edges as any }),
@@ -100,8 +120,11 @@ export default function FlowSecretList({
     for (const s of cmdSecrets) {
       map.set(s.name, s);
     }
+    for (const s of eventSecrets) {
+      map.set(s.name, s);
+    }
     return map;
-  }, [globalSecrets, cmdSecrets]);
+  }, [globalSecrets, cmdSecrets, eventSecrets]);
 
   const missingReferenced = useMemo(
     () => referenced.filter((r) => !availableByName.has(r.name)),
@@ -127,8 +150,12 @@ export default function FlowSecretList({
             <div className="text-xl font-bold text-foreground">Secrets</div>
             <AppSecretDialog
               commandId={commandId}
+              eventListenerId={eventListenerId}
               defaultCommandId={
-                scopeTab === "global" ? null : commandId ?? null
+                scopeTab === "cmd" ? commandId ?? null : null
+              }
+              defaultEventListenerId={
+                scopeTab === "event" ? eventListenerId ?? null : null
               }
             >
               <Button size="sm" className="gap-1.5 h-8 font-medium">
@@ -138,7 +165,7 @@ export default function FlowSecretList({
             </AppSecretDialog>
           </div>
           <div className="text-muted-foreground text-sm">
-            Manage global and command secrets. Copy a placeholder to use it in
+            Manage global, command, and event secrets. Copy a placeholder to use it in
             your blocks.
           </div>
         </div>
@@ -151,8 +178,12 @@ export default function FlowSecretList({
           </div>
           <AppSecretDialog
             commandId={commandId}
+            eventListenerId={eventListenerId}
             defaultCommandId={
-              scopeTab === "global" ? null : commandId ?? null
+              scopeTab === "cmd" ? commandId ?? null : null
+            }
+            defaultEventListenerId={
+              scopeTab === "event" ? eventListenerId ?? null : null
             }
           >
             <Button size="sm" className="gap-1.5 h-8 flex-none font-medium">
@@ -168,20 +199,40 @@ export default function FlowSecretList({
           value={scopeTab}
           onValueChange={(v) => setScopeTab(v as ScopeTab)}
         >
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="all">
-              All ({cmdSecrets.length + globalSecrets.length})
-            </TabsTrigger>
-            <TabsTrigger
-              value="cmd"
-              disabled={!commandId}
-            >
-              Command ({cmdSecrets.length})
-            </TabsTrigger>
-            <TabsTrigger value="global">
-              Global ({globalSecrets.length})
-            </TabsTrigger>
-          </TabsList>
+          {eventListenerId ? (
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="all">
+                All ({eventSecrets.length + globalSecrets.length})
+              </TabsTrigger>
+              <TabsTrigger value="event">
+                Event ({eventSecrets.length})
+              </TabsTrigger>
+              <TabsTrigger value="global">
+                Global ({globalSecrets.length})
+              </TabsTrigger>
+            </TabsList>
+          ) : commandId ? (
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="all">
+                All ({cmdSecrets.length + globalSecrets.length})
+              </TabsTrigger>
+              <TabsTrigger value="cmd">
+                Command ({cmdSecrets.length})
+              </TabsTrigger>
+              <TabsTrigger value="global">
+                Global ({globalSecrets.length})
+              </TabsTrigger>
+            </TabsList>
+          ) : (
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="all">
+                All ({globalSecrets.length})
+              </TabsTrigger>
+              <TabsTrigger value="global">
+                Global ({globalSecrets.length})
+              </TabsTrigger>
+            </TabsList>
+          )}
         </Tabs>
       </div>
 
@@ -236,8 +287,10 @@ export default function FlowSecretList({
               </div>
               <AppSecretDialog
                 commandId={commandId}
+                eventListenerId={eventListenerId}
                 defaultName={missing.name}
                 defaultCommandId={commandId ?? null}
+                defaultEventListenerId={eventListenerId ?? null}
                 defaultIsSecret={!missing.asValue}
               >
                 <Button
@@ -256,6 +309,8 @@ export default function FlowSecretList({
               <div className="text-muted-foreground text-sm">
                 {scopeTab === "cmd"
                   ? "No command secrets yet."
+                  : scopeTab === "event"
+                  ? "No event secrets yet."
                   : scopeTab === "global"
                   ? "No global secrets yet."
                   : "No secrets or values yet."}
@@ -267,6 +322,7 @@ export default function FlowSecretList({
                 key={secret.id}
                 secret={secret}
                 commandId={commandId}
+                eventListenerId={eventListenerId}
               />
             ))
           )}
@@ -279,9 +335,11 @@ export default function FlowSecretList({
 function FlowSecretTile({
   secret,
   commandId,
+  eventListenerId,
 }: {
   secret: AppSecret;
   commandId?: string;
+  eventListenerId?: string;
 }) {
   const appId = useAppId();
   const deleteMutation = useAppSecretDeleteMutation(appId, secret.id);
@@ -337,7 +395,7 @@ function FlowSecretTile({
           ) : (
             <FileTextIcon className="size-4 text-white" />
           )}
-          {!secret.command_id && (
+          {!secret.command_id && !secret.event_listener_id && (
             <span
               className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-background text-foreground/80 border border-border shadow-xs"
               title="Global"
@@ -409,7 +467,11 @@ function FlowSecretTile({
           </TooltipContent>
         </Tooltip>
 
-        <AppSecretDialog secret={secret} commandId={commandId}>
+        <AppSecretDialog
+          secret={secret}
+          commandId={commandId}
+          eventListenerId={eventListenerId}
+        >
           <Button
             variant="ghost"
             size="icon"

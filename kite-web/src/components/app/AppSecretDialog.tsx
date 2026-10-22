@@ -27,7 +27,7 @@ import { toast } from "sonner";
 import { setValidationErrors } from "@/lib/form";
 import LoadingButton from "../common/LoadingButton";
 import { useAppId } from "@/lib/hooks/params";
-import { AppSecret, Command } from "@/lib/types/wire.gen";
+import { AppSecret, Command, EventListener } from "@/lib/types/wire.gen";
 import { Checkbox } from "../ui/checkbox";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import {
@@ -38,13 +38,28 @@ import {
   SelectValue,
 } from "../ui/select";
 import env from "@/lib/env/client";
+import { cn } from "@/lib/utils";
+
+export function formatEventListenerLabel(listener: EventListener): string {
+  if (listener.source === "schedule") {
+    const cron = (listener.flow_source?.nodes as any)?.find(
+      (n: any) => n.type === "entry_event"
+    )?.data?.event_schedule_cron;
+    return `Schedule ${cron ?? ""}`.trim();
+  }
+  if (listener.source === "webhook") {
+    return listener.description ? `Webhook: ${listener.description}` : "Webhook";
+  }
+  return listener.type || "Event Listener";
+}
 
 interface FormFields {
   name: string;
   value: string;
   is_secret: boolean;
-  scope: "global" | "cmd";
+  scope: "global" | "cmd" | "event";
   command_id: string;
+  event_listener_id: string;
 }
 
 // Creates a secret or non-secret value, or edits one when given. True secrets
@@ -56,9 +71,12 @@ export default function AppSecretDialog({
   secret,
   defaultName = "",
   defaultCommandId = null,
+  defaultEventListenerId = null,
   defaultIsSecret = true,
   commandId,
   commands,
+  eventListenerId,
+  eventListeners,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   onCreated,
@@ -67,9 +85,12 @@ export default function AppSecretDialog({
   secret?: AppSecret;
   defaultName?: string;
   defaultCommandId?: string | null;
+  defaultEventListenerId?: string | null;
   defaultIsSecret?: boolean;
   commandId?: string;
   commands?: (Command | undefined)[];
+  eventListenerId?: string;
+  eventListeners?: (EventListener | undefined)[];
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCreated?: (secret: AppSecret) => void;
@@ -91,19 +112,29 @@ export default function AppSecretDialog({
       commandId ??
       commands?.find(Boolean)?.id ??
       "";
+    const initialEventId =
+      secret?.event_listener_id ??
+      defaultEventListenerId ??
+      eventListenerId ??
+      eventListeners?.find(Boolean)?.id ??
+      "";
     const isSecret = secret ? secret.is_secret : defaultIsSecret;
+    let initialScope: "global" | "cmd" | "event" = "global";
+    if (secret) {
+      if (secret.command_id) initialScope = "cmd";
+      else if (secret.event_listener_id) initialScope = "event";
+    } else if (defaultEventListenerId || eventListenerId) {
+      initialScope = "event";
+    } else if (defaultCommandId || commandId) {
+      initialScope = "cmd";
+    }
     return {
       name: secret?.name ?? defaultName,
       value: secret && !secret.is_secret ? secret.value ?? "" : "",
       is_secret: isSecret,
-      scope: secret
-        ? secret.command_id
-          ? "cmd"
-          : "global"
-        : defaultCommandId
-        ? "cmd"
-        : "global",
+      scope: initialScope,
       command_id: initialCmdId,
+      event_listener_id: initialEventId,
     };
   };
 
@@ -116,7 +147,16 @@ export default function AppSecretDialog({
       form.reset(getInitialValues());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, secret, defaultName, defaultCommandId, defaultIsSecret, commandId]);
+  }, [
+    open,
+    secret,
+    defaultName,
+    defaultCommandId,
+    defaultEventListenerId,
+    defaultIsSecret,
+    commandId,
+    eventListenerId,
+  ]);
 
   const watchedIsSecret = form.watch("is_secret");
   const watchedScope = form.watch("scope");
@@ -127,9 +167,17 @@ export default function AppSecretDialog({
 
     const targetCommandId =
       data.scope === "cmd" ? commandId || data.command_id || null : null;
+    const targetEventListenerId =
+      data.scope === "event"
+        ? eventListenerId || data.event_listener_id || null
+        : null;
 
     if (!secret && data.scope === "cmd" && !targetCommandId) {
       toast.error("Select a command for this command secret.");
+      return;
+    }
+    if (!secret && data.scope === "event" && !targetEventListenerId) {
+      toast.error("Select an event listener for this event secret.");
       return;
     }
 
@@ -172,6 +220,7 @@ export default function AppSecretDialog({
           name: data.name,
           value: data.value,
           command_id: targetCommandId,
+          event_listener_id: targetEventListenerId,
           is_secret: data.is_secret,
           allow_empty: false,
         },
@@ -180,8 +229,17 @@ export default function AppSecretDialog({
     }
   }
 
+  const isCommandContext = Boolean(commandId);
+  const isEventContext = Boolean(eventListenerId);
+  const hasCmds = Boolean(commands && commands.length > 0);
+  const hasEvents = Boolean(eventListeners && eventListeners.length > 0);
+
   const canChooseScope =
-    !secret && (Boolean(commandId) || (commands && commands.length > 0));
+    !secret &&
+    (isCommandContext ||
+      isEventContext ||
+      hasCmds ||
+      hasEvents);
 
   return (
     <Dialog
@@ -238,17 +296,53 @@ export default function AppSecretDialog({
             {canChooseScope && (
               <div className="grid gap-2">
                 <FormLabel>Scope</FormLabel>
-                <Tabs
-                  value={watchedScope}
-                  onValueChange={(v) =>
-                    form.setValue("scope", v as "global" | "cmd")
-                  }
-                >
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="global">Global</TabsTrigger>
-                    <TabsTrigger value="cmd">Command</TabsTrigger>
-                  </TabsList>
-                </Tabs>
+                {isEventContext ? (
+                  <Tabs
+                    value={watchedScope === "cmd" ? "global" : watchedScope}
+                    onValueChange={(v) =>
+                      form.setValue("scope", v as "global" | "event")
+                    }
+                  >
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="global">Global</TabsTrigger>
+                      <TabsTrigger value="event">Event</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                ) : isCommandContext ? (
+                  <Tabs
+                    value={watchedScope === "event" ? "global" : watchedScope}
+                    onValueChange={(v) =>
+                      form.setValue("scope", v as "global" | "cmd")
+                    }
+                  >
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="global">Global</TabsTrigger>
+                      <TabsTrigger value="cmd">Command</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                ) : (
+                  <Tabs
+                    value={watchedScope}
+                    onValueChange={(v) =>
+                      form.setValue("scope", v as "global" | "cmd" | "event")
+                    }
+                  >
+                    <TabsList
+                      className={cn(
+                        "grid w-full",
+                        hasCmds && hasEvents
+                          ? "grid-cols-3"
+                          : hasCmds || hasEvents
+                          ? "grid-cols-2"
+                          : "grid-cols-1"
+                      )}
+                    >
+                      <TabsTrigger value="global">Global</TabsTrigger>
+                      {hasCmds && <TabsTrigger value="cmd">Command</TabsTrigger>}
+                      {hasEvents && <TabsTrigger value="event">Event</TabsTrigger>}
+                    </TabsList>
+                  </Tabs>
+                )}
                 {watchedScope === "cmd" && !commandId && commands && (
                   <Select
                     value={form.watch("command_id")}
@@ -261,6 +355,23 @@ export default function AppSecretDialog({
                       {commands.filter(Boolean).map((cmd) => (
                         <SelectItem key={cmd!.id} value={cmd!.id}>
                           /{cmd!.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {watchedScope === "event" && !eventListenerId && eventListeners && (
+                  <Select
+                    value={form.watch("event_listener_id")}
+                    onValueChange={(v) => form.setValue("event_listener_id", v)}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select event listener..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {eventListeners.filter(Boolean).map((listener) => (
+                        <SelectItem key={listener!.id} value={listener!.id}>
+                          {formatEventListenerLabel(listener!)}
                         </SelectItem>
                       ))}
                     </SelectContent>

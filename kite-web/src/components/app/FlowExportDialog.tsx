@@ -31,6 +31,7 @@ type ExportProps = {
   // Templates that are already part of shareData.
   excludeMessageIds?: string[];
   commandId?: string;
+  eventListenerId?: string;
 };
 
 export default function FlowExportDialog({
@@ -55,6 +56,7 @@ function ExportForm({
   flows,
   excludeMessageIds,
   commandId,
+  eventListenerId,
 }: ExportProps) {
   const [showJson, setShowJson] = useState(false);
   const [code, setCode] = useState<string | null>(null);
@@ -77,19 +79,27 @@ function ExportForm({
 
     const secretMap = new Map<
       string,
-      { name: string; is_secret: boolean; scope: "cmd" | "global" }
+      { name: string; is_secret: boolean; scope: "cmd" | "event" | "global" }
     >();
 
     for (const flow of allFlows) {
       for (const ref of getReferencedSecrets(flow)) {
-        const existing = (secrets ?? []).find(
-          (s) =>
-            Boolean(s) &&
-            Boolean(commandId) &&
-            s!.command_id === commandId &&
-            s!.name === ref.name
-        ) ?? (secrets ?? []).find((s) => s && s.name === ref.name
-        );
+        const existing =
+          (secrets ?? []).find(
+            (s) =>
+              Boolean(s) &&
+              Boolean(commandId) &&
+              s!.command_id === commandId &&
+              s!.name === ref.name
+          ) ??
+          (secrets ?? []).find(
+            (s) =>
+              Boolean(s) &&
+              Boolean(eventListenerId) &&
+              s!.event_listener_id === eventListenerId &&
+              s!.name === ref.name
+          ) ??
+          (secrets ?? []).find((s) => s && s.name === ref.name);
         secretMap.set(ref.name, {
           name: ref.name,
           is_secret: existing
@@ -97,7 +107,11 @@ function ExportForm({
             : ref.asSecret
             ? true
             : !ref.asValue,
-          scope: existing?.command_id ? "cmd" : "global",
+          scope: existing?.command_id
+            ? "cmd"
+            : existing?.event_listener_id
+            ? "event"
+            : "global",
         });
       }
     }

@@ -108,6 +108,7 @@ export interface AppSecret {
   id: string;
   name: string;
   command_id: null | string;
+  event_listener_id?: null | string;
   is_secret: boolean;
   has_value: boolean;
   value: null | string;
@@ -119,6 +120,7 @@ export interface AppSecretCreateRequest {
   name: string;
   value: string;
   command_id: null | string;
+  event_listener_id?: null | string;
   is_secret?: boolean;
   allow_empty: boolean;
 }

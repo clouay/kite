@@ -24,6 +24,8 @@ export interface FlowContextStore {
   setType(type: FlowContextType): void;
   commandId?: string;
   setCommandId(commandId?: string): void;
+  eventListenerId?: string;
+  setEventListenerId(eventListenerId?: string): void;
   // The blocks the flow AI changed in its last answer, which stand out until
   // the user clicks into the editor.
   aiChangedNodeIds: string[];
@@ -35,9 +37,11 @@ export const createFlowContextStore = () => {
     immer((set) => ({
       type: "command",
       commandId: undefined,
+      eventListenerId: undefined,
 
       setType: (type) => set({ type }),
       setCommandId: (commandId) => set({ commandId }),
+      setEventListenerId: (eventListenerId) => set({ eventListenerId }),
       aiChangedNodeIds: [],
       setAIChangedNodeIds: (ids) => set({ aiChangedNodeIds: ids }),
     }))
@@ -52,10 +56,12 @@ export function FlowContextStoreProvider({
   children,
   type,
   commandId,
+  eventListenerId,
 }: {
   children: ReactNode;
   type: FlowContextType;
   commandId?: string;
+  eventListenerId?: string;
 }) {
   const [contextStore] = useState(() => createFlowContextStore());
 
@@ -66,6 +72,10 @@ export function FlowContextStoreProvider({
   useEffect(() => {
     contextStore.getState().setCommandId(commandId);
   }, [commandId, contextStore]);
+
+  useEffect(() => {
+    contextStore.getState().setEventListenerId(eventListenerId);
+  }, [eventListenerId, contextStore]);
 
   return (
     <FlowContextStoreContext.Provider value={contextStore}>

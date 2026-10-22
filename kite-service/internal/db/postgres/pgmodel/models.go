@@ -48,6 +48,7 @@ type AppSecret struct {
 	CreatedAt        pgtype.Timestamp
 	UpdatedAt        pgtype.Timestamp
 	CommandID        pgtype.Text
+	EventListenerID  pgtype.Text
 	IsSecret         bool
 }
 

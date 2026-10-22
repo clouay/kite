@@ -65,7 +65,7 @@ type Kind = keyof typeof kinds;
 type SharedSecretMeta = {
   name: string;
   is_secret?: boolean;
-  scope?: "cmd" | "global";
+  scope?: "cmd" | "event" | "global";
 };
 
 type ShareData = {
@@ -267,7 +267,7 @@ function ImportForm({
 
       const requiredMap = new Map<
         string,
-        { name: string; is_secret: boolean; scope: "cmd" | "global" }
+        { name: string; is_secret: boolean; scope: "cmd" | "event" | "global" }
       >();
 
       for (const f of usedFlows) {
@@ -276,7 +276,7 @@ function ImportForm({
             name: ref.name,
             // If the flow references {{secrets.NAME}}, it's a secret. If {{values.NAME}}, it's a value.
             is_secret: ref.asSecret ? true : !ref.asValue,
-            scope: kind === "command" ? "cmd" : "global",
+            scope: kind === "command" ? "cmd" : kind === "event_listener" ? "event" : "global",
           });
         }
       }
@@ -292,16 +292,16 @@ function ImportForm({
                   ? meta.is_secret
                   : prev?.is_secret ?? true,
               scope:
-                meta.scope === "cmd" || meta.scope === "global"
+                meta.scope === "cmd" || meta.scope === "event" || meta.scope === "global"
                   ? meta.scope
-                  : prev?.scope ?? (kind === "command" ? "cmd" : "global"),
+                  : prev?.scope ?? (kind === "command" ? "cmd" : kind === "event_listener" ? "event" : "global"),
             });
           }
         }
       }
 
       const globalSecretNames = new Set(
-        secrets?.filter((s) => s && !s.command_id).map((s) => s!.name)
+        secrets?.filter((s) => s && !s.command_id && !s.event_listener_id).map((s) => s!.name)
       );
 
       let removed = await importMessages(
@@ -350,7 +350,7 @@ function ImportForm({
 
       // Create blank secrets/values marked as needing values for required placeholders.
       const toCreateSecrets = Array.from(requiredMap.values()).filter(
-        (item) => !globalSecretNames.has(item.name) || item.scope === "cmd"
+        (item) => !globalSecretNames.has(item.name) || item.scope === "cmd" || item.scope === "event"
       );
 
       const createdBlankItems: { name: string; is_secret: boolean }[] = [];
@@ -361,7 +361,11 @@ function ImportForm({
               item.scope === "cmd" && kind === "command" && importedId
                 ? importedId
                 : null;
-            if (!targetCommandId && globalSecretNames.has(item.name)) {
+            const targetEventListenerId =
+              item.scope === "event" && kind === "event_listener" && importedId
+                ? importedId
+                : null;
+            if (!targetCommandId && !targetEventListenerId && globalSecretNames.has(item.name)) {
               return;
             }
             const createRes = await apiRequest<AppSecretCreateResponse>(
@@ -373,6 +377,7 @@ function ImportForm({
                   name: item.name,
                   value: "",
                   command_id: targetCommandId,
+                  event_listener_id: targetEventListenerId,
                   is_secret: item.is_secret,
                   allow_empty: true,
                 }),

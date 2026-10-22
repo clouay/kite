@@ -27,7 +27,7 @@ function pageFiles(dir: string): string[] {
 }
 
 function routeOf(file: string) {
-  return "/" + relative(pagesDir, file).replace(/(\/?index)?\.tsx$/, "");
+  return "/" + relative(pagesDir, file).replaceAll("\\", "/").replace(/(\/?index)?\.tsx$/, "");
 }
 
 describe("sitemap.xml", () => {

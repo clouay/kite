@@ -87,7 +87,8 @@ func (h *AppSecretHandler) HandleAppSecretCreate(c *handler.Context, req wire.Ap
 	secret, err := h.appSecretStore.CreateAppSecret(c.Context(), &model.AppSecret{
 		ID:             util.UniqueID(),
 		AppID:          c.App.ID,
-		CommandID:      req.CommandID.String,
+		CommandID:       req.CommandID.String,
+		EventListenerID: req.EventListenerID.String,
 		Name:           req.Name,
 		IsSecret:       isSecret,
 		ValueEncrypted: value,

@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"errors"
 	"regexp"
 	"time"
 
@@ -21,7 +22,8 @@ const MaxAppSecretValueLength = 4096
 type AppSecret struct {
 	ID        string      `json:"id"`
 	Name      string      `json:"name"`
-	CommandID null.String `json:"command_id"`
+	CommandID       null.String `json:"command_id"`
+	EventListenerID null.String `json:"event_listener_id"`
 	IsSecret  bool        `json:"is_secret"`
 	HasValue  bool        `json:"has_value"`
 	Value     null.String `json:"value"`
@@ -34,12 +36,18 @@ type AppSecretListResponse = []*AppSecret
 type AppSecretCreateRequest struct {
 	Name       string      `json:"name"`
 	Value      string      `json:"value"`
-	CommandID  null.String `json:"command_id"`
+	CommandID       null.String `json:"command_id"`
+	EventListenerID null.String `json:"event_listener_id"`
 	IsSecret   *bool       `json:"is_secret"`
 	AllowEmpty bool        `json:"allow_empty"`
 }
 
 func (req AppSecretCreateRequest) Validate() error {
+	if req.CommandID.Valid && req.CommandID.String != "" && req.EventListenerID.Valid && req.EventListenerID.String != "" {
+		return validation.Errors{
+			"event_listener_id": errors.New("cannot specify both command_id and event_listener_id"),
+		}
+	}
 	return validation.ValidateStruct(&req,
 		validation.Field(&req.Name, appSecretNameRules()...),
 		validation.Field(&req.Value, validation.When(!req.AllowEmpty,
@@ -97,7 +105,8 @@ func AppSecretToWire(secret *model.AppSecret, decryptedValue null.String) *AppSe
 	return &AppSecret{
 		ID:        secret.ID,
 		Name:      secret.Name,
-		CommandID: null.NewString(secret.CommandID, secret.CommandID != ""),
+		CommandID:       null.NewString(secret.CommandID, secret.CommandID != ""),
+		EventListenerID: null.NewString(secret.EventListenerID, secret.EventListenerID != ""),
 		IsSecret:  secret.IsSecret,
 		HasValue:  secret.ValueEncrypted != "",
 		Value:     value,

@@ -98,6 +98,7 @@ export default function AppEventListenerPage() {
       {listener && (
         <FlowPage
           flowData={listener.flow_source}
+          eventListener={listener}
           context={
             listener.source === "schedule"
               ? "event_schedule"

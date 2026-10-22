@@ -9,7 +9,7 @@ import {
 import { useCallback, useRef, useState } from "react";
 import FlowEditor, { FlowEditorApi } from "./FlowEditor";
 import FlowMenu from "./FlowMenu";
-import { Command, LogEntry } from "@/lib/types/wire.gen";
+import { Command, EventListener, LogEntry } from "@/lib/types/wire.gen";
 import FlowAIChat from "./FlowAIChat";
 import { Button } from "../ui/button";
 import { SparklesIcon } from "lucide-react";
@@ -26,6 +26,7 @@ interface Props {
   logs?: LogEntry[];
   context: FlowContextType;
   command?: Command;
+  eventListener?: EventListener;
   onChange: () => void;
   // Whether the AI chat is open, if it's opened from outside, like the page's
   // header. Otherwise the editor shows its own button for it.
@@ -38,6 +39,7 @@ export default function Flow({
   logs,
   context,
   command,
+  eventListener,
   onChange,
   chatOpen: controlledChatOpen,
   onChatOpenChange,
@@ -114,7 +116,11 @@ export default function Flow({
   }, []);
 
   return (
-    <FlowContextStoreProvider type={context} commandId={command?.id}>
+    <FlowContextStoreProvider
+      type={context}
+      commandId={command?.id}
+      eventListenerId={eventListener?.id}
+    >
       {/* Keep toasts below the nav bar on mobile */}
       <style jsx global>{`
         @media (max-width: 767px) {

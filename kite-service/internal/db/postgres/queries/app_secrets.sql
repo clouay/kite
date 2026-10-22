@@ -1,5 +1,5 @@
 -- name: GetAppSecretsByApp :many
-SELECT * FROM app_secrets WHERE app_id = $1 AND name IS NOT NULL ORDER BY name, command_id NULLS FIRST;
+SELECT * FROM app_secrets WHERE app_id = $1 AND name IS NOT NULL ORDER BY name, command_id NULLS FIRST, event_listener_id NULLS FIRST;
 
 -- name: GetAppSecret :one
 SELECT * FROM app_secrets WHERE app_id = $1 AND id = $2 AND name IS NOT NULL;
@@ -15,13 +15,14 @@ INSERT INTO app_secrets (
     id,
     app_id,
     command_id,
+    event_listener_id,
     name,
     is_secret,
     value_encrypted,
     created_at,
     updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
 ) RETURNING *;
 
 -- name: UpdateAppSecret :one

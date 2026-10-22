@@ -4,13 +4,15 @@ import {
   CopyIcon,
   FileTextIcon,
   KeyRoundIcon,
+  SatelliteDishIcon,
   TerminalIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import AppEmptyPlaceholder from "./AppEmptyPlaceholder";
 import { Skeleton } from "../ui/skeleton";
 import AutoAnimate from "../common/AutoAnimate";
-import { useAppSecrets, useCommands } from "@/lib/hooks/api";
+import { useAppSecrets, useCommands, useEventListeners } from "@/lib/hooks/api";
+import { formatEventListenerLabel } from "./AppSecretDialog";
 import AppSecretDialog from "./AppSecretDialog";
 import {
   Card,
@@ -23,19 +25,20 @@ import ConfirmDialog from "../common/ConfirmDialog";
 import { useAppSecretDeleteMutation } from "@/lib/api/mutations";
 import { useAppId } from "@/lib/hooks/params";
 import { toast } from "sonner";
-import { AppSecret, Command } from "@/lib/types/wire.gen";
+import { AppSecret, Command, EventListener } from "@/lib/types/wire.gen";
 import { formatDateTime } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { Badge } from "../ui/badge";
 import Link from "next/link";
 
-type ScopeFilter = "all" | "cmd" | "global";
+type ScopeFilter = "all" | "cmd" | "event" | "global";
 
 export default function AppSecretList() {
   const [filter, setFilter] = useState<ScopeFilter>("all");
   const secrets = useAppSecrets();
-  const commands = useCommands();
+  const commands = useCommands();
+  const eventListeners = useEventListeners();
 
   const commandMap = useMemo(() => {
     const map = new Map<string, Command>();
@@ -161,10 +164,14 @@ function AppSecretListEntry({
   secret,
   command,
   commands,
+  eventListener,
+  eventListeners,
 }: {
   secret: AppSecret;
   command?: Command;
   commands?: (Command | undefined)[];
+  eventListener?: EventListener;
+  eventListeners?: (EventListener | undefined)[];
 }) {
   const appId = useAppId();
   const deleteMutation = useAppSecretDeleteMutation(appId, secret.id);
@@ -266,7 +273,7 @@ function AppSecretListEntry({
         </CardDescription>
       </CardHeader>
       <CardFooter className="flex space-x-3">
-        <AppSecretDialog secret={secret} commands={commands}>
+        <AppSecretDialog secret={secret} commands={commands} eventListeners={eventListeners}>
           <Button size="sm" variant={!secret.has_value ? "default" : "outline"}>
             {!secret.has_value ? "Set value" : "Edit"}
           </Button>

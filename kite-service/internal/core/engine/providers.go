@@ -932,7 +932,8 @@ type cachedSecret struct {
 
 type SecretProvider struct {
 	appID          string
-	commandID      string
+	commandID       string
+	eventListenerID string
 	appSecretStore store.AppSecretStore
 	tokenCrypt     *util.SymmetricCrypt
 
@@ -941,10 +942,11 @@ type SecretProvider struct {
 	values map[string]cachedSecret
 }
 
-func NewSecretProvider(appID string, commandID string, appSecretStore store.AppSecretStore, tokenCrypt *util.SymmetricCrypt) *SecretProvider {
+func NewSecretProvider(appID string, commandID string, eventListenerID string, appSecretStore store.AppSecretStore, tokenCrypt *util.SymmetricCrypt) *SecretProvider {
 	return &SecretProvider{
 		appID:          appID,
-		commandID:      commandID,
+		commandID:       commandID,
+		eventListenerID: eventListenerID,
 		appSecretStore: appSecretStore,
 		tokenCrypt:     tokenCrypt,
 	}
@@ -975,8 +977,17 @@ func (p *SecretProvider) loadMetadata(ctx context.Context, names []string) error
 		if secret.CommandID != "" && secret.CommandID != p.commandID {
 			continue
 		}
+		if secret.EventListenerID != "" && secret.EventListenerID != p.eventListenerID {
+			continue
+		}
 		prev, exists := selected[secret.Name]
-		if !exists || (prev.CommandID == "" && secret.CommandID == p.commandID) {
+		if !exists {
+			selected[secret.Name] = secret
+			continue
+		}
+		isScoped := (secret.CommandID != "" && secret.CommandID == p.commandID) ||
+			(secret.EventListenerID != "" && secret.EventListenerID == p.eventListenerID)
+		if prev.CommandID == "" && prev.EventListenerID == "" && isScoped {
 			selected[secret.Name] = secret
 		}
 	}

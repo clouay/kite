@@ -10,6 +10,7 @@ type AppSecret struct {
 	ID               string
 	AppID            string
 	CommandID        string
+	EventListenerID  string
 	Name             string
 	IsSecret         bool
 	AppIntegrationID string

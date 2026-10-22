@@ -4989,7 +4989,7 @@
             "properties": {
               "url": {
                 "type": "string",
-                "format": "uri",
+                "minLength": 1,
                 "description": "URL to send the request to.",
                 "x-templated": true
               },

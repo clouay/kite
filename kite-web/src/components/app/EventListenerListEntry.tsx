@@ -189,6 +189,7 @@ export default function EventListenerListEntry({
                   flow_source: listener.flow_source,
                 }}
                 flows={[listener.flow_source]}
+                eventListenerId={listener.id}
               >
                 <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                   <Share2Icon className="h-4 w-4 mr-2 text-muted-foreground" />

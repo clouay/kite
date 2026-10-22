@@ -63,7 +63,8 @@ func (c *Client) CreateAppSecret(ctx context.Context, secret *model.AppSecret) (
 	row, err := c.Q.CreateAppSecret(ctx, pgmodel.CreateAppSecretParams{
 		ID:             secret.ID,
 		AppID:          secret.AppID,
-		CommandID:      pgtype.Text{String: secret.CommandID, Valid: secret.CommandID != ""},
+		CommandID:       pgtype.Text{String: secret.CommandID, Valid: secret.CommandID != ""},
+		EventListenerID: pgtype.Text{String: secret.EventListenerID, Valid: secret.EventListenerID != ""},
 		Name:           pgtype.Text{String: secret.Name, Valid: true},
 		IsSecret:       secret.IsSecret,
 		ValueEncrypted: secret.ValueEncrypted,
@@ -110,6 +111,7 @@ func rowToAppSecret(row pgmodel.AppSecret) *model.AppSecret {
 		ID:               row.ID,
 		AppID:            row.AppID,
 		CommandID:        row.CommandID.String,
+		EventListenerID:  row.EventListenerID.String,
 		Name:             row.Name.String,
 		IsSecret:         row.IsSecret,
 		AppIntegrationID: row.AppIntegrationID.String,

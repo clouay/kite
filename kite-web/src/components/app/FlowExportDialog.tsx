@@ -30,6 +30,7 @@ type ExportProps = {
   flows: (FlowData | null | undefined)[];
   // Templates that are already part of shareData.
   excludeMessageIds?: string[];
+  commandId?: string;
 };
 
 export default function FlowExportDialog({
@@ -53,6 +54,7 @@ function ExportForm({
   shareData: baseShareData,
   flows,
   excludeMessageIds,
+  commandId,
 }: ExportProps) {
   const [showJson, setShowJson] = useState(false);
   const [code, setCode] = useState<string | null>(null);
@@ -81,11 +83,20 @@ function ExportForm({
     for (const flow of allFlows) {
       for (const ref of getReferencedSecrets(flow)) {
         const existing = (secrets ?? []).find(
-          (s) => s && s.name === ref.name
+          (s) =>
+            Boolean(s) &&
+            Boolean(commandId) &&
+            s!.command_id === commandId &&
+            s!.name === ref.name
+        ) ?? (secrets ?? []).find((s) => s && s.name === ref.name
         );
         secretMap.set(ref.name, {
           name: ref.name,
-          is_secret: existing ? existing.is_secret : !ref.asValue,
+          is_secret: existing
+            ? existing.is_secret
+            : ref.asSecret
+            ? true
+            : !ref.asValue,
           scope: existing?.command_id ? "cmd" : "global",
         });
       }
@@ -107,7 +118,9 @@ function ExportForm({
 
   const bundledNote =
     bundledMessages && bundledMessages.length > 0
-      ? ` The ${bundledMessages.length} message template(s) it uses are included.`
+      ? ` The ${bundledMessages.length} message template(s) and ${
+          bundledSecrets?.length ?? 0
+        } placeholder(s) it uses are included.`
       : "";
 
   function copy(text: string) {

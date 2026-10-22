@@ -274,8 +274,8 @@ function ImportForm({
         for (const ref of getReferencedSecrets(f)) {
           requiredMap.set(ref.name, {
             name: ref.name,
-            // {{values.NAME}} only works for non-secret values.
-            is_secret: !ref.asValue,
+            // If the flow references {{secrets.NAME}}, it's a secret. If {{values.NAME}}, it's a value.
+            is_secret: ref.asSecret ? true : !ref.asValue,
             scope: kind === "command" ? "cmd" : "global",
           });
         }
@@ -353,12 +353,14 @@ function ImportForm({
         (item) => !globalSecretNames.has(item.name) || item.scope === "cmd"
       );
 
-      const createdBlankNames: string[] = [];
+      const createdBlankItems: { name: string; is_secret: boolean }[] = [];
       if (toCreateSecrets.length > 0) {
         await Promise.allSettled(
           toCreateSecrets.map(async (item) => {
             const targetCommandId =
-              kind === "command" && importedId ? importedId : null;
+              item.scope === "cmd" && kind === "command" && importedId
+                ? importedId
+                : null;
             if (!targetCommandId && globalSecretNames.has(item.name)) {
               return;
             }
@@ -377,7 +379,10 @@ function ImportForm({
               }
             );
             if (createRes.success) {
-              createdBlankNames.push(item.name);
+              createdBlankItems.push({
+                name: item.name,
+                is_secret: item.is_secret,
+              });
             }
           })
         );
@@ -395,9 +400,9 @@ function ImportForm({
           `${removed} block(s) referenced variables or message templates from another app, reselect them in the editor.`
         );
       }
-      if (createdBlankNames.length > 0) {
+      if (createdBlankItems.length > 0) {
         toast.warning(
-          `Created ${createdBlankNames.length} blank placeholder(s) (${createdBlankNames.join(
+          `Created ${createdBlankItems.length} blank placeholder(s) (${createdBlankItems.map((s) => s.name).join(
             ", "
           )}) that need values set in Secrets.`
         );

@@ -282,6 +282,15 @@ export default function AppSecretDialog({
                       onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
+                  <FormDescription className="text-xs">
+                    {watchedIsSecret
+                      ? `Use it in API request blocks as {{secrets.${
+                          watchedName || "NAME"
+                        }}}.`
+                      : `Use it in any block as {{values.${
+                          watchedName || "NAME"
+                        }}}.`}
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

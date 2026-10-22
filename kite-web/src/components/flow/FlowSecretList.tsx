@@ -193,9 +193,9 @@ export default function FlowSecretList({
           {missingReferenced.map((missing) => (
             <div
               key={`missing-${missing.name}`}
-              className="flex items-center justify-between gap-3 p-3 rounded-md border border-dashed border-amber-500/40 bg-amber-500/5"
+              className="w-full min-w-0 max-w-full flex items-center justify-between gap-2.5 p-3 rounded-md border border-dashed border-amber-500/40 bg-amber-500/5"
             >
-              <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
                 <div className="rounded-md w-8 h-8 flex justify-center items-center flex-none bg-amber-500 text-white shadow-sm">
                   <AlertTriangleIcon className="size-4 text-white" />
                 </div>
@@ -203,7 +203,7 @@ export default function FlowSecretList({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div
-                        className="font-medium text-sm text-foreground truncate cursor-default"
+                        className="font-medium text-sm text-foreground truncate min-w-0 cursor-default"
                         title={missing.name}
                       >
                         {missing.name}
@@ -213,7 +213,7 @@ export default function FlowSecretList({
                       {missing.name}
                     </TooltipContent>
                   </Tooltip>
-                  <div className="text-xs text-amber-500 truncate mt-0.5">
+                  <div className="text-xs text-amber-500 truncate min-w-0 mt-0.5">
                     Referenced in flow but not created yet
                   </div>
                 </div>
@@ -224,7 +224,11 @@ export default function FlowSecretList({
                 defaultCommandId={commandId ?? null}
                 defaultIsSecret={!missing.usedOutsideHttp}
               >
-                <Button size="sm" variant="outline" className="h-8 text-xs flex-none">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs flex-none px-2.5"
+                >
                   Create
                 </Button>
               </AppSecretDialog>
@@ -268,7 +272,9 @@ function FlowSecretTile({
   const [copied, setCopied] = useState(false);
 
   function copyPlaceholder() {
-    const placeholder = `{{secrets.${secret.name}}}`;
+    const placeholder = `{{${secret.is_secret ? "secrets" : "values"}.${
+      secret.name
+    }}}`;
     navigator.clipboard
       .writeText(placeholder)
       .then(() => {
@@ -295,9 +301,13 @@ function FlowSecretTile({
     });
   }
 
+  const placeholder = `{{${secret.is_secret ? "secrets" : "values"}.${
+    secret.name
+  }}}`;
+
   return (
-    <div className="flex items-center justify-between gap-3 p-3 rounded-md border border-border/60 bg-card hover:bg-muted/40 transition-colors">
-      <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
+    <div className="w-full min-w-0 max-w-full flex items-center justify-between gap-2.5 p-3 rounded-md border border-border/60 bg-card hover:bg-muted/40 transition-colors">
+      <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
         <div
           className={cn(
             "rounded-md w-8 h-8 flex justify-center items-center flex-none shadow-sm",
@@ -313,66 +323,66 @@ function FlowSecretTile({
           )}
         </div>
         <div className="min-w-0 flex-1 overflow-hidden">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
             <Tooltip>
               <TooltipTrigger asChild>
-                <div
-                  className="font-medium text-sm text-foreground truncate cursor-default"
+                <span
+                  className="font-medium text-sm text-foreground truncate min-w-0 block cursor-default"
                   title={secret.name}
                 >
                   {secret.name}
-                </div>
+                </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs break-all">
                 {secret.name}
               </TooltipContent>
             </Tooltip>
             {!secret.has_value && (
-              <span className="text-[11px] text-amber-500 font-medium flex items-center gap-1 flex-none">
+              <span className="text-[11px] text-amber-500 font-medium flex items-center gap-1 flex-none whitespace-nowrap">
                 <AlertTriangleIcon className="size-3" />
                 Needs value
               </span>
             )}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className="text-xs text-muted-foreground truncate cursor-default mt-0.5"
-                title={`{{secrets.${secret.name}}}`}
-              >
-                {secret.command_id ? "Command" : "Global"}{" "}
-                {secret.is_secret ? "secret" : "value"} ·{" "}
-                <span className="font-mono text-[11px]">
-                  {`{{secrets.${secret.name}}}`}
+          <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0 overflow-hidden mt-0.5">
+            <span className="flex-none whitespace-nowrap">
+              {secret.command_id ? "Command" : "Global"}{" "}
+              {secret.is_secret ? "secret" : "value"}
+            </span>
+            <span className="flex-none">·</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="font-mono text-[11px] truncate min-w-0 cursor-default">
+                  {placeholder}
                 </span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs break-all">
-              <code>{`{{secrets.${secret.name}}}`}</code>
-            </TooltipContent>
-          </Tooltip>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs break-all">
+                <code>{placeholder}</code>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1 flex-none">
+      <div className="flex items-center gap-0.5 flex-none">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 text-muted-foreground hover:text-foreground"
+              className="size-7 text-muted-foreground hover:text-foreground"
               onClick={copyPlaceholder}
             >
               {copied ? (
-                <CheckIcon className="size-4 text-green-500" />
+                <CheckIcon className="size-3.5 text-green-500" />
               ) : (
-                <CopyIcon className="size-4" />
+                <CopyIcon className="size-3.5" />
               )}
               <span className="sr-only">Copy placeholder</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            Copy <code>{`{{secrets.${secret.name}}}`}</code>
+            Copy <code>{placeholder}</code>
           </TooltipContent>
         </Tooltip>
 
@@ -380,10 +390,10 @@ function FlowSecretTile({
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground hover:text-foreground"
+            className="size-7 text-muted-foreground hover:text-foreground"
             title="Edit"
           >
-            <PencilIcon className="size-4" />
+            <PencilIcon className="size-3.5" />
             <span className="sr-only">Edit</span>
           </Button>
         </AppSecretDialog>
@@ -396,10 +406,10 @@ function FlowSecretTile({
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground hover:text-destructive"
+            className="size-7 text-muted-foreground hover:text-destructive"
             title="Delete"
           >
-            <Trash2Icon className="size-4" />
+            <Trash2Icon className="size-3.5" />
             <span className="sr-only">Delete</span>
           </Button>
         </ConfirmDialog>

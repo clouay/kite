@@ -17,7 +17,7 @@ export function getReferencedSecrets(flow: FlowData): ReferencedSecret[] {
     const data = JSON.stringify(node.data);
     for (const [, placeholder] of data.matchAll(/\{\{(.*?)\}\}/g)) {
       for (const [, name] of placeholder.matchAll(
-        /\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)/g
+        /\b(?:secrets|values)\.([A-Za-z_][A-Za-z0-9_]*)/g
       )) {
         const existing = map.get(name) ?? {
           name,

@@ -167,7 +167,7 @@ func (p *secretEvalPatcher) Visit(node *ast.Node) {
 		return
 	}
 
-	if parent.Value != "secrets" {
+	if parent.Value != "secrets" && parent.Value != "values" {
 		return
 	}
 

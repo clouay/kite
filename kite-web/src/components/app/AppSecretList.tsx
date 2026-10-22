@@ -171,7 +171,9 @@ function AppSecretListEntry({
   const [copied, setCopied] = useState(false);
 
   function copyPlaceholder() {
-    const placeholder = `{{secrets.${secret.name}}}`;
+    const placeholder = `{{${secret.is_secret ? "secrets" : "values"}.${
+      secret.name
+    }}}`;
     navigator.clipboard
       .writeText(placeholder)
       .then(() => {
@@ -251,7 +253,9 @@ function AppSecretListEntry({
         </CardTitle>
         <CardDescription className="text-sm space-y-1">
           <div>
-            <code>{`{{secrets.${secret.name}}}`}</code>, updated{" "}
+            <code>{`{{${secret.is_secret ? "secrets" : "values"}.${
+              secret.name
+            }}}`}</code>, updated{" "}
             {formatDateTime(new Date(secret.updated_at))}
           </div>
           {!secret.is_secret && secret.has_value && secret.value && (

@@ -174,8 +174,11 @@ func TestNonSecretsWorkOutsideRequestsWhileTrueSecretsAreRejected(t *testing.T) 
 	)
 	t.Cleanup(c.Cancel)
 
-	okNode := &CompiledFlowNode{ID: "1", Type: FlowNodeTypeActionLog, Data: FlowNodeData{LogMessage: "msg: {{secrets.PUBLIC_TEXT}}"}}
+	okNode := &CompiledFlowNode{ID: "1", Type: FlowNodeTypeActionLog, Data: FlowNodeData{LogMessage: "msg: {{values.PUBLIC_TEXT}}"}}
 	require.NoError(t, okNode.Execute(c))
+
+	okLegacyNode := &CompiledFlowNode{ID: "2", Type: FlowNodeTypeActionLog, Data: FlowNodeData{LogMessage: "msg: {{secrets.PUBLIC_TEXT}}"}}
+	require.NoError(t, okLegacyNode.Execute(c))
 
 	blockedNode := &CompiledFlowNode{ID: "1", Type: FlowNodeTypeActionLog, Data: FlowNodeData{LogMessage: "{{secrets.API_KEY}}"}}
 	err := blockedNode.Execute(c)
@@ -208,16 +211,18 @@ func TestHTTPRequestRedactsURLs(t *testing.T) {
 }
 
 func TestSecretNames(t *testing.T) {
-	assert.Equal(t, []string{"A", "_B"}, secretNames([]string{
+	assert.Equal(t, []string{"A", "_B", "C_VAL"}, secretNames([]string{
 		"https://example.com/secrets.txt?key={{secrets.A}}",
 		"{{ secrets._B + secrets.A }}",
 		"secrets.C",
 		"{{webhook.data.secrets.count}}",
+		"{{ values.C_VAL }}",
 	}))
 }
 
 func TestOnlyPlainSecrets(t *testing.T) {
 	assert.True(t, onlyPlainSecrets("{{secrets.TOKEN}}"))
+	assert.True(t, onlyPlainSecrets("{{values.TOKEN}}"))
 	assert.True(t, onlyPlainSecrets("Bearer {{ secrets.TOKEN }}"))
 	assert.True(t, onlyPlainSecrets("{{webhook.data.x}}"))
 	assert.False(t, onlyPlainSecrets("{{secrets.TOKEN[0:1]}}"))

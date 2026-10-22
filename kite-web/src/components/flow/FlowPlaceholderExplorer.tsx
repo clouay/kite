@@ -60,7 +60,7 @@ export default function FlowPlaceholderExplorer({
         label: `${s.is_secret ? "Secret" : "Value"} '${s.name}' (${
           s.command_id ? "Command" : "Global"
         })`,
-        value: `secrets.${s.name}`,
+        value: `${s.is_secret ? "secrets" : "values"}.${s.name}`,
       }));
 
     if (secretPlaceholders.length > 0) {
@@ -94,7 +94,9 @@ export default function FlowPlaceholderExplorer({
         defaultIsSecret={isHttpNode}
         onCreated={(secret) => {
           if (isHttpNode || !secret.is_secret) {
-            onSelect(`secrets.${secret.name}`);
+            onSelect(
+              `${secret.is_secret ? "secrets" : "values"}.${secret.name}`
+            );
           }
         }}
       />

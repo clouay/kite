@@ -17,11 +17,11 @@ import (
 var (
 	placeholderRe = regexp.MustCompile(`(?s)\{\{(.*?)\}\}`)
 	// Not after a dot, as webhook.data.secrets.count isn't a secret.
-	secretReferenceRe = regexp.MustCompile(`(?:^|[^.\w])secrets\.([A-Za-z_][A-Za-z0-9_]*)`)
-	plainSecretRe     = regexp.MustCompile(`^\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*$`)
+	secretReferenceRe = regexp.MustCompile(`(?:^|[^.\w])(?:secrets|values)\.([A-Za-z_][A-Za-z0-9_]*)`)
+	plainSecretRe     = regexp.MustCompile(`^\s*(?:secrets|values)\.[A-Za-z_][A-Za-z0-9_]*\s*$`)
 	// Any use of the secrets, also like secrets?.NAME, which can read the
 	// ones another placeholder of the template references.
-	secretMentionRe = regexp.MustCompile(`(?:^|[^.\w])secrets\b`)
+	secretMentionRe = regexp.MustCompile(`(?:^|[^.\w])(?:secrets|values)\b`)
 )
 
 // secretNames are the secrets the templates reference. Only placeholders are
@@ -112,6 +112,7 @@ func newFlowSecrets(ctx *FlowContext, templates ...string) (*flowSecrets, error)
 		res.evalCtx.Env = eval.Env{}
 	}
 	res.evalCtx.Env["secrets"] = env
+	res.evalCtx.Env["values"] = env
 	return res, nil
 }
 

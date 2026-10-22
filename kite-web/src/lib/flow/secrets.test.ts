@@ -20,7 +20,7 @@ describe("getReferencedSecretNames", () => {
           id: "2",
           type: "action_log",
           position: { x: 0, y: 0 },
-          data: { log_message: "{{secrets.LOGGED}}" },
+          data: { log_message: "{{secrets.LOGGED}} and {{values.CONFIG_VAL}}" },
         },
       ],
       edges: [],
@@ -30,6 +30,7 @@ describe("getReferencedSecretNames", () => {
       { name: "API_KEY", usedInHttp: true, usedOutsideHttp: false },
       { name: "OTHER", usedInHttp: true, usedOutsideHttp: false },
       { name: "LOGGED", usedInHttp: false, usedOutsideHttp: true },
+      { name: "CONFIG_VAL", usedInHttp: false, usedOutsideHttp: true },
     ]);
   });
 });

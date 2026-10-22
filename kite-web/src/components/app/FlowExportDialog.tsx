@@ -85,7 +85,7 @@ function ExportForm({
         );
         secretMap.set(ref.name, {
           name: ref.name,
-          is_secret: existing ? existing.is_secret : !ref.usedOutsideHttp,
+          is_secret: existing ? existing.is_secret : !ref.asValue,
           scope: existing?.command_id ? "cmd" : "global",
         });
       }

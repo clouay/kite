@@ -40,7 +40,7 @@ import {
 import { toast } from "sonner";
 import { ShareCodeInput, ShareCodePanel } from "./ShareCode";
 import { BracesIcon, KeyRoundIcon } from "lucide-react";
-import { useTrack } from "@/lib/analytics";
+import { track } from "@/lib/analytics";
 
 const kinds = {
   command: {
@@ -118,7 +118,7 @@ function ImportForm({
   const secrets = useAppSecrets();
 
   const commandsImportMutation = useCommandsImportMutation(appId);
-  const track = useTrack();
+
   const eventListenersImportMutation = useEventListenersImportMutation(appId);
   const messagesImportMutation = useMessagesImportMutation(appId);
   const shareCodeResolveMutation = useShareCodeResolveMutation();
@@ -274,7 +274,8 @@ function ImportForm({
         for (const ref of getReferencedSecrets(f)) {
           requiredMap.set(ref.name, {
             name: ref.name,
-            is_secret: !ref.usedOutsideHttp,
+            // {{values.NAME}} only works for non-secret values.
+            is_secret: !ref.asValue,
             scope: kind === "command" ? "cmd" : "global",
           });
         }

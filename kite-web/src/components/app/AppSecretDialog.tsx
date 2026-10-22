@@ -120,6 +120,7 @@ export default function AppSecretDialog({
 
   const watchedIsSecret = form.watch("is_secret");
   const watchedScope = form.watch("scope");
+  const watchedName = form.watch("name");
 
   function onSubmit(data: FormFields) {
     if (pending) return;
@@ -284,7 +285,7 @@ export default function AppSecretDialog({
                   </FormControl>
                   <FormDescription className="text-xs">
                     {watchedIsSecret
-                      ? `Use it in API request blocks as {{secrets.${
+                      ? `Use it in API requests as {{secrets.${
                           watchedName || "NAME"
                         }}}.`
                       : `Use it in any block as {{values.${

@@ -7,6 +7,20 @@ const plainSecretRe = /^\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*$/;
 // Any use of the secrets, also like secrets?.NAME, which can read the ones
 // another placeholder of the template references.
 const secretMentionRe = /(?<![.\w])secrets\b/;
+// Non-secret values, like {{values.GREETING}}, which work in any block.
+const valueReferenceRe = /(?<![.\w])values\.([A-Za-z_][A-Za-z0-9_]*)/g;
+
+// The names of the values a template references, like GREETING in
+// {{values.GREETING}}.
+export function templateValueNames(template: string) {
+  const names: string[] = [];
+  for (const [, placeholder] of template.matchAll(placeholderRe)) {
+    for (const [, name] of placeholder.matchAll(valueReferenceRe)) {
+      if (!names.includes(name)) names.push(name);
+    }
+  }
+  return names;
+}
 
 // The names of the secrets a template references, like API_KEY in
 // {{secrets.API_KEY}}.

@@ -154,9 +154,13 @@ func (p *nodeEvalPatcher) Visit(node *ast.Node) {
 	})
 }
 
-type secretEvalPatcher struct{}
+// valueEvalPatcher turns values.NAME into non_secret("NAME"), so the app's
+// non-secret values can be used in any block. True secrets are rejected by
+// the provider, they can only be used as {{secrets.NAME}} in settings that
+// allow them.
+type valueEvalPatcher struct{}
 
-func (p *secretEvalPatcher) Visit(node *ast.Node) {
+func (p *valueEvalPatcher) Visit(node *ast.Node) {
 	accessor, ok := (*node).(*ast.MemberNode)
 	if !ok {
 		return
@@ -167,7 +171,7 @@ func (p *secretEvalPatcher) Visit(node *ast.Node) {
 		return
 	}
 
-	if parent.Value != "secrets" && parent.Value != "values" {
+	if parent.Value != "values" {
 		return
 	}
 

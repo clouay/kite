@@ -1,46 +1,64 @@
+import { getBlockDefinition } from "../blocks";
 import { FlowData } from "../types/flow.gen";
+import { templateSecretNames, templateValueNames } from "./templateSecrets";
+
+// The names of the secrets a flow references, like API_KEY in
+// {{secrets.API_KEY}}. Only the settings of blocks that allow secrets can use
+// them, and only placeholders reference them.
+export function getReferencedSecretNames(flow: FlowData) {
+  const names = new Set<string>();
+  for (const node of flow.nodes) {
+    const fields = getBlockDefinition(node.type)?.fields ?? [];
+    for (const field of fields.filter((f) => f.secrets)) {
+      const data = JSON.stringify(node.data[field.name] ?? "");
+      for (const name of templateSecretNames(data)) {
+        names.add(name);
+      }
+    }
+  }
+  return Array.from(names);
+}
 
 export interface ReferencedSecret {
   name: string;
-  usedInHttp: boolean;
-  usedOutsideHttp: boolean;
+  // Referenced as {{secrets.NAME}}.
+  asSecret: boolean;
+  // Referenced as {{values.NAME}}, which only works for non-secret values.
+  asValue: boolean;
+  // Referenced as {{secrets.NAME}} in a setting that doesn't allow secrets,
+  // which fails when the flow runs.
+  secretMisplaced: boolean;
 }
 
-// Extracts all {{secrets.NAME}} placeholders referenced across any node in a
-// flow, along with whether each name is used in HTTP request blocks and/or
-// other blocks.
+// Every secret and value a flow references, in any setting. Used to show the
+// ones that are missing or misused, and to create blank ones when importing a
+// shared flow.
 export function getReferencedSecrets(flow: FlowData): ReferencedSecret[] {
   const map = new Map<string, ReferencedSecret>();
+  const get = (name: string) => {
+    let ref = map.get(name);
+    if (!ref) {
+      ref = { name, asSecret: false, asValue: false, secretMisplaced: false };
+      map.set(name, ref);
+    }
+    return ref;
+  };
 
-  for (const node of flow.nodes) {
-    const isHttp = node.type === "action_http_request";
-    const data = JSON.stringify(node.data);
-    for (const [, placeholder] of data.matchAll(/\{\{(.*?)\}\}/g)) {
-      for (const [, name] of placeholder.matchAll(
-        /\b(?:secrets|values)\.([A-Za-z_][A-Za-z0-9_]*)/g
-      )) {
-        const existing = map.get(name) ?? {
-          name,
-          usedInHttp: false,
-          usedOutsideHttp: false,
-        };
-        if (isHttp) {
-          existing.usedInHttp = true;
-        } else {
-          existing.usedOutsideHttp = true;
-        }
-        map.set(name, existing);
+  for (const node of flow.nodes ?? []) {
+    const fields = getBlockDefinition(node.type)?.fields ?? [];
+    for (const [key, value] of Object.entries(node.data ?? {})) {
+      const allowsSecrets = fields.some((f) => f.name === key && f.secrets);
+      const data = JSON.stringify(value ?? "");
+      for (const name of templateSecretNames(data)) {
+        const ref = get(name);
+        ref.asSecret = true;
+        if (!allowsSecrets) ref.secretMisplaced = true;
+      }
+      for (const name of templateValueNames(data)) {
+        get(name).asValue = true;
       }
     }
   }
 
   return Array.from(map.values());
-}
-
-// The names of the secrets a flow references in HTTP requests, like API_KEY in
-// {{secrets.API_KEY}}.
-export function getReferencedSecretNames(flow: FlowData) {
-  return getReferencedSecrets(flow)
-    .filter((s) => s.usedInHttp)
-    .map((s) => s.name);
 }

@@ -1,7 +1,6 @@
 package flow
 
 import (
-	"github.com/expr-lang/expr/ast"
 	"errors"
 	"fmt"
 	"maps"
@@ -17,11 +16,11 @@ import (
 var (
 	placeholderRe = regexp.MustCompile(`(?s)\{\{(.*?)\}\}`)
 	// Not after a dot, as webhook.data.secrets.count isn't a secret.
-	secretReferenceRe = regexp.MustCompile(`(?:^|[^.\w])(?:secrets|values)\.([A-Za-z_][A-Za-z0-9_]*)`)
-	plainSecretRe     = regexp.MustCompile(`^\s*(?:secrets|values)\.[A-Za-z_][A-Za-z0-9_]*\s*$`)
+	secretReferenceRe = regexp.MustCompile(`(?:^|[^.\w])secrets\.([A-Za-z_][A-Za-z0-9_]*)`)
+	plainSecretRe     = regexp.MustCompile(`^\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*$`)
 	// Any use of the secrets, also like secrets?.NAME, which can read the
 	// ones another placeholder of the template references.
-	secretMentionRe = regexp.MustCompile(`(?:^|[^.\w])(?:secrets|values)\b`)
+	secretMentionRe = regexp.MustCompile(`(?:^|[^.\w])secrets\b`)
 )
 
 // secretNames are the secrets the templates reference. Only placeholders are
@@ -98,21 +97,12 @@ func newFlowSecrets(ctx *FlowContext, templates ...string) (*flowSecrets, error)
 	res.values = values
 	res.evalCtx = eval.Context{
 		Env:      maps.Clone(ctx.EvalCtx.Env),
-		Patchers: func() []ast.Visitor {
-		var patchers []ast.Visitor
-		for _, p := range ctx.EvalCtx.Patchers {
-			if _, isSecretPatcher := p.(*secretEvalPatcher); !isSecretPatcher {
-				patchers = append(patchers, p)
-			}
-		}
-		return patchers
-	}(),
+		Patchers: ctx.EvalCtx.Patchers,
 	}
 	if res.evalCtx.Env == nil {
 		res.evalCtx.Env = eval.Env{}
 	}
 	res.evalCtx.Env["secrets"] = env
-	res.evalCtx.Env["values"] = env
 	return res, nil
 }
 

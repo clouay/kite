@@ -58,11 +58,11 @@ func NewContext(
 			}
 			val, ok := values[name]
 			if !ok {
-				return nil, fmt.Errorf("the app has no secret named %s", name)
+				return nil, fmt.Errorf("the app has no value named %s", name)
 			}
 			return val, nil
 		}
-		evalCtx.Patchers = append(evalCtx.Patchers, &secretEvalPatcher{})
+		evalCtx.Patchers = append(evalCtx.Patchers, &valueEvalPatcher{})
 	}
 
 	return &FlowContext{

@@ -98,11 +98,13 @@ export default function FlowSecretList({
     [referenced, availableByName]
   );
 
+  // References that fail when the flow runs: {{secrets.NAME}} in a setting
+  // that doesn't allow secrets, or {{values.NAME}} for a true secret.
   const misusedTrueSecrets = useMemo(
     () =>
       referenced.filter((r) => {
         const s = availableByName.get(r.name);
-        return s && s.is_secret && r.usedOutsideHttp;
+        return r.secretMisplaced || Boolean(s && s.is_secret && r.asValue);
       }),
     [referenced, availableByName]
   );
@@ -182,13 +184,14 @@ export default function FlowSecretList({
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2.5">
               <AlertTriangleIcon className="size-4 flex-none mt-0.5" />
               <div>
-                Secret{" "}
                 <span className="font-semibold">
                   {misusedTrueSecrets.map((s) => s.name).join(", ")}
                 </span>{" "}
-                is used outside an HTTP Request block. Uncheck{" "}
-                <strong>Secret value</strong> on edit if it needs to be used in
-                other blocks.
+                can&apos;t be used where it is. Secrets only work as{" "}
+                <code>{"{{secrets.NAME}}"}</code> in settings that allow them,
+                like API requests. For other blocks, uncheck{" "}
+                <strong>Secret value</strong> and use{" "}
+                <code>{"{{values.NAME}}"}</code>.
               </div>
             </div>
           )}
@@ -225,7 +228,7 @@ export default function FlowSecretList({
                 commandId={commandId}
                 defaultName={missing.name}
                 defaultCommandId={commandId ?? null}
-                defaultIsSecret={!missing.usedOutsideHttp}
+                defaultIsSecret={!missing.asValue}
               >
                 <Button
                   size="sm"

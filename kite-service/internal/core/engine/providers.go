@@ -1033,8 +1033,8 @@ func (p *SecretProvider) Secrets(ctx context.Context, names []string) (map[strin
 }
 
 // NonSecrets resolves non-secret values (is_secret = false) for use in any flow
-// block, and rejects true secrets outside of HTTP request blocks without
-// decrypting them.
+// block, like {{values.NAME}}, and rejects true secrets without decrypting
+// them.
 func (p *SecretProvider) NonSecrets(ctx context.Context, names []string) (map[string]string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1050,7 +1050,7 @@ func (p *SecretProvider) NonSecrets(ctx context.Context, names []string) (map[st
 			continue
 		}
 		if entry.isSecret {
-			return nil, fmt.Errorf("secret %s cannot be used outside of HTTP request blocks", name)
+			return nil, fmt.Errorf("%s is a secret, it can only be used as {{secrets.%s}} in settings that allow secrets", name, name)
 		}
 		if !entry.hasValue {
 			return nil, fmt.Errorf("secret %s has no value set", name)

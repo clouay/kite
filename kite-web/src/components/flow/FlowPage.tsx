@@ -76,7 +76,7 @@ function InnerFlowPage({
           hasUnsavedChanges={hasUnsavedChanges}
           isSaving={isSaving}
           command={command}
-          context={context}
+
           onSave={onSave}
           onExit={handleExitRequest}
           chatOpen={chatOpen}

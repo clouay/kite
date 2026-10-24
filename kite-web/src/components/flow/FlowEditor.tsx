@@ -57,7 +57,7 @@ import { useHookedTheme } from "@/lib/hooks/theme";
 import { useFlowViewportsStore } from "@/lib/state/flowViewports";
 import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/base.css";
-import { ListTreeIcon, Redo2Icon, Undo2Icon } from "lucide-react";
+import { FocusIcon, ListTreeIcon, Redo2Icon, Undo2Icon } from "lucide-react";
 import FlowContextMenu, { FlowContextMenuState } from "./FlowContextMenu";
 import FlowInsertBlockDialog from "./FlowInsertBlockDialog";
 import { Button } from "@/components/ui/button";
@@ -308,7 +308,10 @@ export default function FlowEditor({
         ? eds.map((e) => (e.selected ? { ...e, selected: false } : e))
         : eds
     );
-  }, [setNodes, setEdges]);
+    if (isMobile) {
+      onExitMobileSelectMode?.();
+    }
+  }, [setNodes, setEdges, isMobile, onExitMobileSelectMode]);
 
   const resetZoom = useCallback(() => {
     zoomTo(1, { duration: 250 });
@@ -355,7 +358,24 @@ export default function FlowEditor({
     setEdges((eds) =>
       eds.map((e) => (e.selected ? { ...e, selected: false } : e))
     );
-  }, [containerRef, screenToFlowPosition, getNodes, getEdges, setNodes, setEdges]);
+    if (isMobile) {
+      const firstTopLevel = currentNodes.find((n) =>
+        inViewTopLevelIds.has(n.id)
+      );
+      if (firstTopLevel) {
+        onEnterMobileSelectMode?.({ ...firstTopLevel, selected: true });
+      }
+    }
+  }, [
+    containerRef,
+    screenToFlowPosition,
+    getNodes,
+    getEdges,
+    setNodes,
+    setEdges,
+    isMobile,
+    onEnterMobileSelectMode,
+  ]);
 
   const selectAllInFlow = useCallback(() => {
     const currentNodes = getNodes();
@@ -368,7 +388,22 @@ export default function FlowEditor({
     setEdges((eds) =>
       eds.map((e) => (e.selected ? { ...e, selected: false } : e))
     );
-  }, [getNodes, getEdges, setNodes, setEdges]);
+    if (isMobile) {
+      const firstTopLevel = currentNodes.find((n) =>
+        allTopLevelIds.includes(n.id)
+      );
+      if (firstTopLevel) {
+        onEnterMobileSelectMode?.({ ...firstTopLevel, selected: true });
+      }
+    }
+  }, [
+    getNodes,
+    getEdges,
+    setNodes,
+    setEdges,
+    isMobile,
+    onEnterMobileSelectMode,
+  ]);
 
   const duplicateWithConnections = useCallback(() => {
     const currentNodes = getNodes();
@@ -509,10 +544,7 @@ export default function FlowEditor({
       }
 
       commit();
-      setEdges((eds) => [
-        ...eds.filter((e) => e.id !== edgeId),
-        ...newEdges,
-      ]);
+      setEdges((eds) => [...eds.filter((e) => e.id !== edgeId), ...newEdges]);
       setNodes((nds) => [
         ...nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
         ...createdNodes.map((n) =>
@@ -569,6 +601,7 @@ export default function FlowEditor({
   const isDragging = useRef(false);
   const rightClickSelectedIdsRef = useRef<Set<string>>(new Set());
   const isRightClickingRef = useRef(false);
+  const isShiftKeyDownRef = useRef(false);
   const companionDragIdsRef = useRef<Set<string>>(new Set());
 
   const wrappedOnNodesChange = useCallback(
@@ -581,8 +614,9 @@ export default function FlowEditor({
         }
         if (
           change.type === "select" &&
-          isRightClickingRef.current &&
-          rightClickSelectedIdsRef.current.size > 1
+          (isShiftKeyDownRef.current ||
+            (isRightClickingRef.current &&
+              rightClickSelectedIdsRef.current.size > 0))
         ) {
           return false;
         }
@@ -590,17 +624,35 @@ export default function FlowEditor({
         return true;
       });
 
+      if (isMobile) {
+        if (!mobileMoveMode) {
+          filteredChanges = filteredChanges.filter(
+            (c) => c.type !== "position"
+          );
+        } else {
+          const currentNodes = getNodes();
+          const currentEdges = getEdges();
+          const selectedIds = currentNodes
+            .filter((n) => n.selected)
+            .map((n) => n.id);
+          const movableIds = withOwnedNodes(
+            selectedIds,
+            currentNodes,
+            currentEdges
+          );
+          filteredChanges = filteredChanges.filter(
+            (c) => c.type !== "position" || movableIds.has(c.id)
+          );
+        }
+      }
+
       if (filteredChanges.length === 0) return;
 
       // Dragging a selected block or an owner block moves the rest of the
       // selection and any owned branch blocks along with it.
       const posChanges = filteredChanges.filter(
-        (
-          c
-        ): c is Extract<
-          NodeChange<Node<NodeData>>,
-          { type: "position" }
-        > => c.type === "position"
+        (c): c is Extract<NodeChange<Node<NodeData>>, { type: "position" }> =>
+          c.type === "position"
       );
 
       if (posChanges.length === 1) {
@@ -673,6 +725,8 @@ export default function FlowEditor({
       record,
       commit,
       markChanged,
+      isMobile,
+      mobileMoveMode,
     ]
   );
 
@@ -771,6 +825,20 @@ export default function FlowEditor({
       const target = getNode(con.target)!;
       if (!canConnect(source.type!, target.type!)) return false;
 
+      // Prevent cycles
+      /*const hasCycle = (node: Node, visited = new Set()) => {
+        if (visited.has(node.id)) return false;
+
+        visited.add(node.id);
+
+        for (const outgoer of getOutgoers(node, nodes, edges)) {
+          if (outgoer.id === con.source) return true;
+          if (hasCycle(outgoer, visited)) return true;
+        }
+      };
+
+      if (target.id === con.source) return false;
+      return !hasCycle(target);*/
       return true;
     },
     [getNode]
@@ -880,9 +948,40 @@ export default function FlowEditor({
     []
   );
 
+  const [contextMenu, setContextMenu] = useState<FlowContextMenuState>({
+    open: false,
+    x: 0,
+    y: 0,
+    kind: "node",
+  });
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu((prev) => (prev.open ? { ...prev, open: false } : prev));
+  }, []);
+
+  const openContextMenu = useCallback(
+    (menuState: Omit<FlowContextMenuState, "open" | "id">) => {
+      setContextMenu({
+        ...menuState,
+        open: true,
+        id: Date.now(),
+      });
+    },
+    []
+  );
+
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!e.isPrimary) {
+        clearLongPressTimer();
+        return;
+      }
       if (e.button !== 0) return;
+      if (!isMobile && e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
 
       const target = e.target as HTMLElement | null;
       const nodeEl = target?.closest(".react-flow__node[data-id]");
@@ -946,7 +1045,41 @@ export default function FlowEditor({
 
             setInsertBlockEdgeId(edgeId);
           }, 1000);
+          return;
         }
+      }
+
+      if (
+        isMobile &&
+        !mobileMoveMode &&
+        !target?.closest(".react-flow__handle") &&
+        target?.closest(".react-flow__pane")
+      ) {
+        const clientX = e.clientX;
+        const clientY = e.clientY;
+        clearLongPressTimer();
+        longPressTriggeredRef.current = false;
+        pointerStartRef.current = {
+          x: clientX,
+          y: clientY,
+        };
+
+        longPressTimerRef.current = setTimeout(() => {
+          longPressTimerRef.current = null;
+          pointerStartRef.current = null;
+          longPressTriggeredRef.current = true;
+
+          if (typeof navigator !== "undefined" && navigator.vibrate) {
+            navigator.vibrate(15);
+          }
+
+          clearAIChanges();
+          openContextMenu({
+            x: clientX,
+            y: clientY,
+            kind: "pane",
+          });
+        }, longPressDurationMs);
       }
     },
     [
@@ -959,6 +1092,8 @@ export default function FlowEditor({
       getEdges,
       getNodes,
       findEdgeIdAtOrNear,
+      clearAIChanges,
+      openContextMenu,
     ]
   );
 
@@ -979,6 +1114,11 @@ export default function FlowEditor({
 
   const handlePointerUpOrCancel = useCallback(() => {
     clearLongPressTimer();
+    if (longPressTriggeredRef.current) {
+      setTimeout(() => {
+        longPressTriggeredRef.current = false;
+      }, 100);
+    }
   }, [clearLongPressTimer]);
 
   const [marqueeRect, setMarqueeRect] = useState<{
@@ -991,43 +1131,20 @@ export default function FlowEditor({
     startX: number;
     startY: number;
     moved: boolean;
+    isShiftKey?: boolean;
   } | null>(null);
   const marqueeCleanupRef = useRef<(() => void) | null>(null);
   const suppressNextContextMenuRef = useRef(false);
   const ignoreContainerContextMenuRef = useRef(false);
 
-  const [contextMenu, setContextMenu] = useState<FlowContextMenuState>({
-    open: false,
-    x: 0,
-    y: 0,
-    kind: "node",
-  });
-
-  const closeContextMenu = useCallback(() => {
-    setContextMenu((prev) => (prev.open ? { ...prev, open: false } : prev));
-  }, []);
-
   const [insertBlockEdgeId, setInsertBlockEdgeId] = useState<string | null>(
     null
   );
-  const rightClickHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
-  const rightClickHoldTriggeredRef = useRef(false);
-
-  const clearRightClickHoldTimer = useCallback(() => {
-    if (rightClickHoldTimerRef.current) {
-      clearTimeout(rightClickHoldTimerRef.current);
-      rightClickHoldTimerRef.current = null;
-    }
-  }, []);
-
   useEffect(() => {
     return () => {
-      clearRightClickHoldTimer();
       marqueeCleanupRef.current?.();
     };
-  }, [clearRightClickHoldTimer]);
+  }, []);
 
   const [renameDialog, setRenameDialog] = useState<{
     open: boolean;
@@ -1072,6 +1189,9 @@ export default function FlowEditor({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Shift") {
+        isShiftKeyDownRef.current = true;
+      }
       if (e.key === "F2") {
         const activeEl = document.activeElement;
         if (
@@ -1094,81 +1214,163 @@ export default function FlowEditor({
         }
       }
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Shift") {
+        isShiftKeyDownRef.current = false;
+      }
+    };
+    const onBlur = () => {
+      isShiftKeyDownRef.current = false;
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [getNodes]);
 
   const handleMouseDownCapture = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
-      if (isMobile || e.button !== 2) return;
+      if (isMobile) return;
+      if (e.shiftKey && e.button === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      if (e.button !== 2) return;
+
       const target = e.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable]")) return;
 
       marqueeCleanupRef.current?.();
-      clearRightClickHoldTimer();
-      rightClickHoldTriggeredRef.current = false;
 
       isRightClickingRef.current = true;
+      setTimeout(() => {
+        isRightClickingRef.current = false;
+      }, 0);
+
       rightClickSelectedIdsRef.current = new Set(
         getNodes()
           .filter((n) => n.selected)
           .map((n) => n.id)
       );
-      setTimeout(() => {
-        isRightClickingRef.current = false;
-      }, 0);
-
-      const targetNodeEl = target?.closest(".react-flow__node[data-id]");
-      const targetNodeId = targetNodeEl?.getAttribute("data-id");
-
-      if (targetNodeId) {
-        rightClickHoldTimerRef.current = setTimeout(() => {
-          rightClickHoldTimerRef.current = null;
-          rightClickHoldTriggeredRef.current = true;
-          suppressNextContextMenuRef.current = true;
-
-          if (typeof navigator !== "undefined" && navigator.vibrate) {
-            navigator.vibrate(15);
-          }
-
-          const currentNodes = getNodes();
-          const currentEdges = getEdges();
-          const topId =
-            getOwnerNodeId(targetNodeId, currentNodes, currentEdges) ??
-            targetNodeId;
-          const groupIds = withOwnedNodes(
-            [topId],
-            currentNodes,
-            currentEdges
-          );
-
-          setNodes((nds) =>
-            nds.map((n) =>
-              groupIds.has(n.id) ? { ...n, selected: true } : n
-            )
-          );
-        }, 350);
-      }
 
       rightClickDragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
         moved: false,
+        isShiftKey: e.shiftKey,
+      };
+
+      const applyMarqueeSelection = (
+        startX: number,
+        startY: number,
+        endX: number,
+        endY: number,
+        additive: boolean
+      ) => {
+        const minX = Math.min(startX, endX);
+        const maxX = Math.max(startX, endX);
+        const minY = Math.min(startY, endY);
+        const maxY = Math.max(startY, endY);
+
+        const p1 = screenToFlowPosition({ x: minX, y: minY });
+        const p2 = screenToFlowPosition({ x: maxX, y: maxY });
+        const box = {
+          minX: Math.min(p1.x, p2.x),
+          maxX: Math.max(p1.x, p2.x),
+          minY: Math.min(p1.y, p2.y),
+          maxY: Math.max(p1.y, p2.y),
+        };
+
+        const currentNodes = getNodes();
+        const currentEdges = getEdges();
+        const matchedTopLevelIds = new Set<string>();
+
+        for (const n of currentNodes) {
+          const w = n.measured?.width ?? n.width ?? 200;
+          const h = n.measured?.height ?? n.height ?? 80;
+          const right = n.position.x + w;
+          const bottom = n.position.y + h;
+
+          const marginX = Math.min(32, w * 0.35);
+          const marginY = Math.min(24, h * 0.35);
+          const centerX = n.position.x + w / 2;
+          const centerY = n.position.y + h / 2;
+
+          const centerInside =
+            centerX >= box.minX &&
+            centerX <= box.maxX &&
+            centerY >= box.minY &&
+            centerY <= box.maxY;
+
+          const substantialOverlap =
+            right - marginX >= box.minX &&
+            n.position.x + marginX <= box.maxX &&
+            bottom - marginY >= box.minY &&
+            n.position.y + marginY <= box.maxY;
+
+          if (centerInside || substantialOverlap) {
+            const topId =
+              getOwnerNodeId(n.id, currentNodes, currentEdges) ?? n.id;
+            matchedTopLevelIds.add(topId);
+          }
+        }
+
+        const seedIds = additive
+          ? [...rightClickSelectedIdsRef.current, ...matchedTopLevelIds]
+          : [...matchedTopLevelIds];
+        const groupIds = withOwnedNodes(seedIds, currentNodes, currentEdges);
+
+        setNodes((nds) => {
+          let changedSelection = false;
+          const next = nds.map((n) => {
+            const shouldSelect = groupIds.has(n.id);
+            if (!!n.selected !== shouldSelect) {
+              changedSelection = true;
+              return { ...n, selected: shouldSelect };
+            }
+            return n;
+          });
+          return changedSelection ? next : nds;
+        });
+
+        if (!additive) {
+          setEdges((eds) =>
+            eds.some((edge) => edge.selected)
+              ? eds.map((edge) =>
+                  edge.selected ? { ...edge, selected: false } : edge
+                )
+              : eds
+          );
+        }
       };
 
       const onWindowMouseMove = (moveEvent: MouseEvent) => {
-        if (!rightClickDragRef.current) return;
-        const dx = moveEvent.clientX - rightClickDragRef.current.startX;
-        const dy = moveEvent.clientY - rightClickDragRef.current.startY;
-        if (Math.hypot(dx, dy) >= 6) {
-          clearRightClickHoldTimer();
-          rightClickDragRef.current.moved = true;
+        const drag = rightClickDragRef.current;
+        if (!drag) return;
+        const { startX, startY, moved } = drag;
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        if (moved || Math.hypot(dx, dy) >= 6) {
+          drag.moved = true;
           setMarqueeRect({
-            startX: rightClickDragRef.current.startX,
-            startY: rightClickDragRef.current.startY,
+            startX,
+            startY,
             currentX: moveEvent.clientX,
             currentY: moveEvent.clientY,
           });
+          applyMarqueeSelection(
+            startX,
+            startY,
+            moveEvent.clientX,
+            moveEvent.clientY,
+            moveEvent.shiftKey || !!drag.isShiftKey
+          );
         }
       };
 
@@ -1180,93 +1382,19 @@ export default function FlowEditor({
 
       const onWindowMouseUp = (upEvent: MouseEvent) => {
         if (upEvent.button !== 2) return;
-        cleanupListeners();
-        clearRightClickHoldTimer();
-
-        if (rightClickHoldTriggeredRef.current) {
-          rightClickHoldTriggeredRef.current = false;
-          rightClickDragRef.current = null;
-          setMarqueeRect(null);
-          suppressNextContextMenuRef.current = true;
-          setTimeout(() => {
-            suppressNextContextMenuRef.current = false;
-          }, 150);
-          return;
-        }
-
         const drag = rightClickDragRef.current;
+        cleanupListeners();
         rightClickDragRef.current = null;
 
         if (drag?.moved) {
           suppressNextContextMenuRef.current = true;
-          const minX = Math.min(drag.startX, upEvent.clientX);
-          const maxX = Math.max(drag.startX, upEvent.clientX);
-          const minY = Math.min(drag.startY, upEvent.clientY);
-          const maxY = Math.max(drag.startY, upEvent.clientY);
-
-          const p1 = screenToFlowPosition({ x: minX, y: minY });
-          const p2 = screenToFlowPosition({ x: maxX, y: maxY });
-          const box = {
-            minX: Math.min(p1.x, p2.x),
-            maxX: Math.max(p1.x, p2.x),
-            minY: Math.min(p1.y, p2.y),
-            maxY: Math.max(p1.y, p2.y),
-          };
-
-          const currentNodes = getNodes();
-          const currentEdges = getEdges();
-          const matchedTopLevelIds = new Set<string>();
-
-          for (const n of currentNodes) {
-            const w = n.measured?.width ?? n.width ?? 200;
-            const h = n.measured?.height ?? n.height ?? 80;
-            const right = n.position.x + w;
-            const bottom = n.position.y + h;
-
-            const marginX = Math.min(32, w * 0.35);
-            const marginY = Math.min(24, h * 0.35);
-            const centerX = n.position.x + w / 2;
-            const centerY = n.position.y + h / 2;
-
-            const centerInside =
-              centerX >= box.minX &&
-              centerX <= box.maxX &&
-              centerY >= box.minY &&
-              centerY <= box.maxY;
-
-            const substantialOverlap =
-              right - marginX >= box.minX &&
-              n.position.x + marginX <= box.maxX &&
-              bottom - marginY >= box.minY &&
-              n.position.y + marginY <= box.maxY;
-
-            if (centerInside || substantialOverlap) {
-              const topId =
-                getOwnerNodeId(n.id, currentNodes, currentEdges) ?? n.id;
-              matchedTopLevelIds.add(topId);
-            }
-          }
-
-          const groupIds = withOwnedNodes(
-            [...matchedTopLevelIds],
-            currentNodes,
-            currentEdges
+          applyMarqueeSelection(
+            drag.startX,
+            drag.startY,
+            upEvent.clientX,
+            upEvent.clientY,
+            upEvent.shiftKey || !!drag.isShiftKey
           );
-          if (upEvent.shiftKey) {
-            setNodes((nds) =>
-              nds.map((n) =>
-                groupIds.has(n.id) ? { ...n, selected: true } : n
-              )
-            );
-          } else {
-            setNodes((nds) =>
-              nds.map((n) => ({ ...n, selected: groupIds.has(n.id) }))
-            );
-            setEdges((eds) =>
-              eds.map((e) => (e.selected ? { ...e, selected: false } : e))
-            );
-          }
-
           setMarqueeRect(null);
           setTimeout(() => {
             suppressNextContextMenuRef.current = false;
@@ -1280,15 +1408,7 @@ export default function FlowEditor({
       window.addEventListener("mousemove", onWindowMouseMove);
       window.addEventListener("mouseup", onWindowMouseUp);
     },
-    [
-      isMobile,
-      getNodes,
-      getEdges,
-      screenToFlowPosition,
-      setNodes,
-      setEdges,
-      clearRightClickHoldTimer,
-    ]
+    [isMobile, getNodes, getEdges, screenToFlowPosition, setNodes, setEdges]
   );
 
   const handleNodeContextMenu = useCallback(
@@ -1311,16 +1431,35 @@ export default function FlowEditor({
       }
 
       if (suppressNextContextMenuRef.current) return;
+
+      const currentNodes = getNodes();
+      const currentEdges = getEdges();
+      const targetId =
+        getOwnerNodeId(node.id, currentNodes, currentEdges) ?? node.id;
+
+      if (e.shiftKey) {
+        const targetNode = currentNodes.find((n) => n.id === targetId);
+        if (!targetNode) return;
+
+        const groupIds = withOwnedNodes([targetId], currentNodes, currentEdges);
+        const nextSelected = !targetNode.selected;
+        const updatedNodes = currentNodes.map((n) =>
+          groupIds.has(n.id) ? { ...n, selected: nextSelected } : n
+        );
+        setNodes(updatedNodes);
+
+        if (nextSelected) {
+          onNodeTap?.(node);
+        }
+        return;
+      }
+
       ignoreContainerContextMenuRef.current = true;
       setTimeout(() => {
         ignoreContainerContextMenuRef.current = false;
       }, 0);
 
       clearAIChanges();
-      const currentNodes = getNodes();
-      const currentEdges = getEdges();
-      const targetId =
-        getOwnerNodeId(node.id, currentNodes, currentEdges) ?? node.id;
       const prevSelected = rightClickSelectedIdsRef.current;
       const isAlreadySelected =
         node.selected ||
@@ -1358,8 +1497,7 @@ export default function FlowEditor({
         );
       }
 
-      setContextMenu({
-        open: true,
+      openContextMenu({
         x: e.clientX,
         y: e.clientY,
         kind: "node",
@@ -1373,10 +1511,12 @@ export default function FlowEditor({
       selectMobileTopLevelNode,
       onEnterMobileSelectMode,
       clearAIChanges,
+      openContextMenu,
       getNodes,
       getEdges,
       setNodes,
       setEdges,
+      onNodeTap,
     ]
   );
 
@@ -1386,20 +1526,58 @@ export default function FlowEditor({
       e.stopPropagation();
       if (isMobile) return;
       if (suppressNextContextMenuRef.current) return;
+
+      if (e.shiftKey) {
+        const target = e.target as HTMLElement | null;
+        const targetNodeEl = target?.closest(".react-flow__node[data-id]");
+        const targetNodeId = targetNodeEl?.getAttribute("data-id");
+        if (targetNodeId) {
+          const currentNodes = getNodes();
+          const currentEdges = getEdges();
+          const targetId =
+            getOwnerNodeId(targetNodeId, currentNodes, currentEdges) ??
+            targetNodeId;
+          const targetNode = currentNodes.find((n) => n.id === targetId);
+          if (targetNode) {
+            const groupIds = withOwnedNodes(
+              [targetId],
+              currentNodes,
+              currentEdges
+            );
+            const nextSelected = !targetNode.selected;
+            const updatedNodes = currentNodes.map((n) =>
+              groupIds.has(n.id) ? { ...n, selected: nextSelected } : n
+            );
+            setNodes(updatedNodes);
+            if (nextSelected) {
+              onNodeTap?.(targetNode);
+            }
+          }
+        }
+        return;
+      }
+
       ignoreContainerContextMenuRef.current = true;
       setTimeout(() => {
         ignoreContainerContextMenuRef.current = false;
       }, 0);
 
       clearAIChanges();
-      setContextMenu({
-        open: true,
+      openContextMenu({
         x: e.clientX,
         y: e.clientY,
         kind: "node",
       });
     },
-    [isMobile, clearAIChanges]
+    [
+      isMobile,
+      clearAIChanges,
+      openContextMenu,
+      getNodes,
+      getEdges,
+      setNodes,
+      onNodeTap,
+    ]
   );
 
   const handlePaneContextMenu = useCallback(
@@ -1407,6 +1585,7 @@ export default function FlowEditor({
       e.preventDefault();
       e.stopPropagation();
       if (isMobile) return;
+      if (e.shiftKey) return;
       if (suppressNextContextMenuRef.current) return;
       ignoreContainerContextMenuRef.current = true;
       setTimeout(() => {
@@ -1414,14 +1593,13 @@ export default function FlowEditor({
       }, 0);
 
       clearAIChanges();
-      setContextMenu({
-        open: true,
+      openContextMenu({
         x: e.clientX,
         y: e.clientY,
         kind: "pane",
       });
     },
-    [isMobile, clearAIChanges]
+    [isMobile, clearAIChanges, openContextMenu]
   );
 
   const handleEdgeContextMenu = useCallback(
@@ -1440,8 +1618,7 @@ export default function FlowEditor({
       }, 0);
 
       clearAIChanges();
-      setContextMenu({
-        open: true,
+      openContextMenu({
         x: e.clientX,
         y: e.clientY,
         kind: "edge",
@@ -1449,11 +1626,17 @@ export default function FlowEditor({
         canInsertIntoEdge: canSpliceEdge(edge, currentNodes),
       });
     },
-    [isMobile, clearAIChanges, getNodes]
+    [isMobile, clearAIChanges, openContextMenu, getNodes]
   );
 
   const handleNodeClick = useCallback(
-    (_e: ReactMouseEvent, node: Node<NodeData>) => {
+    (e: ReactMouseEvent, node: Node<NodeData>) => {
+      if (e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       clearAIChanges();
       closeContextMenu();
 
@@ -1462,35 +1645,33 @@ export default function FlowEditor({
         return;
       }
 
-      if (isMobile) {
-        if (mobileMoveMode) {
-          return;
+      if (isMobile && mobileMoveMode) {
+        return;
+      }
+
+      if (isMobile && mobileSelectMode) {
+        const currentNodes = getNodes();
+        const currentEdges = getEdges();
+        const targetId =
+          getOwnerNodeId(node.id, currentNodes, currentEdges) ?? node.id;
+        const targetNode = currentNodes.find((n) => n.id === targetId);
+        if (!targetNode) return;
+
+        const groupIds = withOwnedNodes([targetId], currentNodes, currentEdges);
+        const nextSelected = !targetNode.selected;
+        const updatedNodes = currentNodes.map((n) =>
+          groupIds.has(n.id) ? { ...n, selected: nextSelected } : n
+        );
+        setNodes(updatedNodes);
+
+        if (isMobile && getTopLevelSelectedNodes(updatedNodes).length === 0) {
+          onExitMobileSelectMode?.();
         }
 
-        if (mobileSelectMode) {
-          const currentNodes = getNodes();
-          const currentEdges = getEdges();
-          const targetId =
-            getOwnerNodeId(node.id, currentNodes, currentEdges) ?? node.id;
-          const targetNode = currentNodes.find((n) => n.id === targetId);
-          if (!targetNode) return;
-
-          const groupIds = withOwnedNodes(
-            [targetId],
-            currentNodes,
-            currentEdges
-          );
-          const nextSelected = !targetNode.selected;
-          const updatedNodes = currentNodes.map((n) =>
-            groupIds.has(n.id) ? { ...n, selected: nextSelected } : n
-          );
-          setNodes(updatedNodes);
-
-          if (getTopLevelSelectedNodes(updatedNodes).length === 0) {
-            onExitMobileSelectMode?.();
-          }
-          return;
+        if (nextSelected) {
+          onNodeTap?.(node);
         }
+        return;
       }
 
       onNodeTap?.(node);
@@ -1509,10 +1690,42 @@ export default function FlowEditor({
     ]
   );
 
-  const handlePaneClick = useCallback(() => {
-    clearAIChanges();
-    closeContextMenu();
-  }, [clearAIChanges, closeContextMenu]);
+  const handlePaneClick = useCallback(
+    (e?: ReactMouseEvent) => {
+      if (longPressTriggeredRef.current) {
+        longPressTriggeredRef.current = false;
+        return;
+      }
+      if (e?.shiftKey) {
+        return;
+      }
+      clearAIChanges();
+      closeContextMenu();
+    },
+    [clearAIChanges, closeContextMenu]
+  );
+
+  const handleClickCapture = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      if (isMobile && longPressTriggeredRef.current) {
+        const target = e.target as HTMLElement | null;
+        if (
+          !target?.closest(".react-flow__node[data-id]") &&
+          target?.closest(".react-flow__pane")
+        ) {
+          longPressTriggeredRef.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+      if (!isMobile && e.shiftKey && e.button === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    [isMobile]
+  );
 
   const handleContainerContextMenu = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -1524,21 +1737,37 @@ export default function FlowEditor({
       e.preventDefault();
 
       if (isMobile) return;
+      if (e.shiftKey) return;
       if (suppressNextContextMenuRef.current) return;
       if (ignoreContainerContextMenuRef.current) return;
 
       clearAIChanges();
-      setContextMenu({
-        open: true,
+      openContextMenu({
         x: e.clientX,
         y: e.clientY,
         kind: "pane",
       });
     },
-    [isMobile, clearAIChanges]
+    [isMobile, clearAIChanges, openContextMenu]
   );
 
-  const handleEdgeClick = useCallback((_e: ReactMouseEvent, _edge: Edge) => {}, []);
+  const handleEdgeClick = useCallback((_e: ReactMouseEvent, _edge: Edge) => {},
+  []);
+
+  const flowNodes = useMemo(() => {
+    if (!isMobile) return nodes;
+    if (!mobileMoveMode) {
+      return nodes.map((n) =>
+        n.draggable === false ? n : { ...n, draggable: false }
+      );
+    }
+    const selectedIds = nodes.filter((n) => n.selected).map((n) => n.id);
+    const movableIds = withOwnedNodes(selectedIds, nodes, edges);
+    return nodes.map((n) => {
+      const isMovable = movableIds.has(n.id);
+      return n.draggable === isMovable ? n : { ...n, draggable: isMovable };
+    });
+  }, [isMobile, mobileMoveMode, nodes, edges]);
 
   return (
     <div
@@ -1551,6 +1780,7 @@ export default function FlowEditor({
       onPointerUpCapture={handlePointerUpOrCancel}
       onPointerCancelCapture={handlePointerUpOrCancel}
       onMouseDownCapture={handleMouseDownCapture}
+      onClickCapture={handleClickCapture}
       onContextMenu={handleContainerContextMenu}
     >
       <style jsx>{`
@@ -1574,7 +1804,7 @@ export default function FlowEditor({
         }
       `}</style>
       <ReactFlow
-        nodes={nodes}
+        nodes={flowNodes}
         edges={edges}
         onNodesChange={wrappedOnNodesChange}
         onEdgesChange={wrappedOnEdgesChange}
@@ -1594,10 +1824,14 @@ export default function FlowEditor({
         onPaneContextMenu={handlePaneContextMenu}
         onEdgeContextMenu={handleEdgeContextMenu}
         onPaneClick={handlePaneClick}
-        onMoveStart={closeContextMenu}
+        onMoveStart={() => {
+          if (!longPressTriggeredRef.current) {
+            closeContextMenu();
+          }
+        }}
         onMoveEnd={onMoveEnd}
         panOnDrag={isMobile ? undefined : [0, 1]}
-        nodesDraggable={true}
+        nodesDraggable={!isMobile || mobileMoveMode}
         elementsSelectable={!isMobile}
         colorMode={theme === "dark" ? "dark" : "light"}
         defaultEdgeOptions={{ type: "delete_button" }}
@@ -1612,16 +1846,20 @@ export default function FlowEditor({
       >
         <Controls
           showInteractive={false}
+          showFitView={false}
           position="bottom-right"
           className="scale-110 !hidden md:!flex"
         >
+          <ControlButton onClick={handleCenterFlow} title="Center flow">
+            <FocusIcon className="size-5 !fill-none" />
+          </ControlButton>
           <ControlButton onClick={undo} disabled={!canUndo} title="Undo">
             <Undo2Icon className="size-5 !fill-none" />
           </ControlButton>
           <ControlButton onClick={redo} disabled={!canRedo} title="Redo">
             <Redo2Icon className="size-5 !fill-none" />
           </ControlButton>
-          <ControlButton onClick={format}>
+          <ControlButton onClick={format} title="Auto arrange layout">
             <ListTreeIcon className="size-5 !fill-none" />
           </ControlButton>
         </Controls>
@@ -1707,7 +1945,7 @@ export default function FlowEditor({
         }}
       />
 
-      {!isMobile && (
+      {(!isMobile || contextMenu.kind === "pane") && (
         <FlowContextMenu
           state={contextMenu}
           onClose={closeContextMenu}

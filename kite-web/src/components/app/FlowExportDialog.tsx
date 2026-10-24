@@ -23,7 +23,7 @@ import { toast } from "sonner";
 
 type ExportProps = {
   title: string;
-  type: "command" | "event_listener" | "message";
+  type: "command" | "event_listener" | "message" | "bundle";
   shareData: Record<string, unknown>;
   // Message templates used by these flows are exported along with them, so
   // they don't have to be recreated in the other app.
@@ -32,6 +32,8 @@ type ExportProps = {
   excludeMessageIds?: string[];
   commandId?: string;
   eventListenerId?: string;
+  // Shown under the title, like what the export contains.
+  note?: ReactNode;
 };
 
 export default function FlowExportDialog({
@@ -49,7 +51,7 @@ export default function FlowExportDialog({
 }
 
 // Separate from the dialog so its state resets every time it's opened.
-function ExportForm({
+export function ExportForm({
   title,
   type,
   shareData: baseShareData,
@@ -57,6 +59,7 @@ function ExportForm({
   excludeMessageIds,
   commandId,
   eventListenerId,
+  note,
 }: ExportProps) {
   const [showJson, setShowJson] = useState(false);
   const [code, setCode] = useState<string | null>(null);
@@ -117,7 +120,7 @@ function ExportForm({
     }
 
     return Array.from(secretMap.values());
-  }, [bundledMessages, flows, secrets]);
+  }, [bundledMessages, flows, secrets, commandId, eventListenerId]);
 
   const shareData = useMemo(() => {
     const next = { ...baseShareData };
@@ -174,6 +177,7 @@ function ExportForm({
             Copy the JSON below and import it into another app.{bundledNote}
           </DialogDescription>
         </DialogHeader>
+        {note}
         <Textarea
           readOnly
           value={json}
@@ -206,6 +210,7 @@ function ExportForm({
           after 90 days without use.{bundledNote}
         </DialogDescription>
       </DialogHeader>
+      {note}
       <ShareCodePanel>
         <ShareCodeDisplay code={code} />
       </ShareCodePanel>

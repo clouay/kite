@@ -7,13 +7,17 @@ import {
   SatelliteDishIcon,
   TerminalIcon,
 } from "lucide-react";
+import SearchableList, { ListActions } from "./SearchableList";
 import { Button } from "../ui/button";
 import AppEmptyPlaceholder from "./AppEmptyPlaceholder";
 import { Skeleton } from "../ui/skeleton";
 import AutoAnimate from "../common/AutoAnimate";
-import { useAppSecrets, useCommands, useEventListeners } from "@/lib/hooks/api";
-import { formatEventListenerLabel } from "./AppSecretDialog";
-import AppSecretDialog from "./AppSecretDialog";
+import {
+  useAppSecrets,
+  useCommands,
+  useEventListeners,
+} from "@/lib/hooks/api";
+import AppSecretDialog, { formatEventListenerLabel } from "./AppSecretDialog";
 import {
   Card,
   CardDescription,
@@ -37,7 +41,7 @@ type ScopeFilter = "all" | "cmd" | "event" | "global";
 export default function AppSecretList() {
   const [filter, setFilter] = useState<ScopeFilter>("all");
   const secrets = useAppSecrets();
-  const commands = useCommands();
+  const commands = useCommands();
   const eventListeners = useEventListeners();
 
   const commandMap = useMemo(() => {
@@ -47,6 +51,14 @@ export default function AppSecretList() {
     }
     return map;
   }, [commands]);
+
+  const eventListenerMap = useMemo(() => {
+    const map = new Map<string, EventListener>();
+    for (const l of eventListeners ?? []) {
+      if (l) map.set(l.id, l);
+    }
+    return map;
+  }, [eventListeners]);
 
   const allSecrets = useMemo(
     () => (secrets ?? []).filter((s): s is AppSecret => Boolean(s)),
@@ -58,8 +70,13 @@ export default function AppSecretList() {
     [allSecrets]
   );
 
+  const eventSecrets = useMemo(
+    () => allSecrets.filter((s) => Boolean(s.event_listener_id)),
+    [allSecrets]
+  );
+
   const globalSecrets = useMemo(
-    () => allSecrets.filter((s) => !s.command_id),
+    () => allSecrets.filter((s) => !s.command_id && !s.event_listener_id),
     [allSecrets]
   );
 
@@ -67,6 +84,8 @@ export default function AppSecretList() {
     const base =
       filter === "cmd"
         ? cmdSecrets
+        : filter === "event"
+        ? eventSecrets
         : filter === "global"
         ? globalSecrets
         : allSecrets;
@@ -74,7 +93,7 @@ export default function AppSecretList() {
       if (a.has_value !== b.has_value) return a.has_value ? 1 : -1;
       return a.name.localeCompare(b.name);
     });
-  }, [filter, allSecrets, cmdSecrets, globalSecrets]);
+  }, [filter, allSecrets, cmdSecrets, eventSecrets, globalSecrets]);
 
   const needsValueCount = useMemo(
     () => allSecrets.filter((s) => !s.has_value).length,
@@ -84,8 +103,12 @@ export default function AppSecretList() {
   const createButton = (
     <AppSecretDialog
       commands={commands}
+      eventListeners={eventListeners}
       defaultCommandId={
         filter === "cmd" ? commands?.find(Boolean)?.id ?? null : null
+      }
+      defaultEventListenerId={
+        filter === "event" ? eventListeners?.find(Boolean)?.id ?? null : null
       }
     >
       <Button>Create secret</Button>
@@ -100,16 +123,17 @@ export default function AppSecretList() {
           onValueChange={(v) => setFilter(v as ScopeFilter)}
           className="w-full sm:w-auto"
         >
-          <TabsList className="grid w-full sm:w-[320px] grid-cols-3">
+          <TabsList className="grid w-full sm:w-[420px] grid-cols-4">
             <TabsTrigger value="all">All ({allSecrets.length})</TabsTrigger>
             <TabsTrigger value="cmd">Command ({cmdSecrets.length})</TabsTrigger>
+            <TabsTrigger value="event">
+              Event ({eventSecrets.length})
+            </TabsTrigger>
             <TabsTrigger value="global">
               Global ({globalSecrets.length})
             </TabsTrigger>
           </TabsList>
         </Tabs>
-
-        {allSecrets.length > 0 && <div className="flex">{createButton}</div>}
       </div>
 
       {needsValueCount > 0 && (
@@ -117,8 +141,8 @@ export default function AppSecretList() {
           <AlertTriangleIcon className="size-4 flex-none" />
           <div>
             <strong>{needsValueCount}</strong> placeholder
-            {needsValueCount === 1 ? "" : "s"} from imported commands need a
-            value configured before use.
+            {needsValueCount === 1 ? "" : "s"} from imported flows need a value
+            configured before use.
           </div>
         </div>
       )}
@@ -130,19 +154,24 @@ export default function AppSecretList() {
         </>
       ) : filteredSecrets.length === 0 ? (
         <AppEmptyPlaceholder
+          icon={KeyRoundIcon}
           title={
             filter === "cmd"
-              ? "There are no command secrets"
+              ? "No command secrets yet"
+              : filter === "event"
+              ? "No event secrets yet"
               : filter === "global"
-              ? "There are no global secrets"
-              : "There are no secrets"
+              ? "No global secrets yet"
+              : "No secrets yet"
           }
           description="Store API keys, command secrets, and reusable configuration values here instead of hardcoding them in your blocks."
-          action={createButton}
+          action={<ListActions>{createButton}</ListActions>}
         />
       ) : (
-        <>
-          {filteredSecrets.map((secret) => (
+        <SearchableList
+          items={filteredSecrets}
+          fields={(secret) => [secret.name]}
+          renderItem={(secret) => (
             <AppSecretListEntry
               secret={secret}
               command={
@@ -151,10 +180,18 @@ export default function AppSecretList() {
                   : undefined
               }
               commands={commands}
+              eventListener={
+                secret.event_listener_id
+                  ? eventListenerMap.get(secret.event_listener_id)
+                  : undefined
+              }
+              eventListeners={eventListeners}
               key={secret.id}
             />
-          ))}
-        </>
+          )}
+          placeholder="Search secrets"
+          actions={createButton}
+        />
       )}
     </AutoAnimate>
   );
@@ -233,6 +270,22 @@ function AppSecretListEntry({
                 Command
               </Badge>
             )
+          ) : secret.event_listener_id ? (
+            eventListener ? (
+              <Link href={`/apps/${appId}/events/${secret.event_listener_id}`}>
+                <Badge
+                  variant="secondary"
+                  className="gap-1 font-normal hover:bg-secondary/80 cursor-pointer"
+                >
+                  <SatelliteDishIcon className="size-3" />
+                  {formatEventListenerLabel(eventListener)}
+                </Badge>
+              </Link>
+            ) : (
+              <Badge variant="secondary" className="font-normal">
+                Event
+              </Badge>
+            )
           ) : (
             <Badge variant="outline" className="font-normal">
               Global
@@ -273,7 +326,11 @@ function AppSecretListEntry({
         </CardDescription>
       </CardHeader>
       <CardFooter className="flex space-x-3">
-        <AppSecretDialog secret={secret} commands={commands} eventListeners={eventListeners}>
+        <AppSecretDialog
+          secret={secret}
+          commands={commands}
+          eventListeners={eventListeners}
+        >
           <Button size="sm" variant={!secret.has_value ? "default" : "outline"}>
             {!secret.has_value ? "Set value" : "Edit"}
           </Button>

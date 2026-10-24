@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/diamondburned/arikawa/v3/discord"
@@ -29,6 +30,7 @@ func init() {
 		FlowNodeTypeControlLoopEach:             executeControlLoopEach,
 		FlowNodeTypeControlLoopEnd:              executeControlLoopEnd,
 		FlowNodeTypeControlLoopExit:             executeControlLoopExit,
+		FlowNodeTypeControlFlowEnd:              executeControlFlowEnd,
 		FlowNodeTypeControlSleep:                executeControlSleep,
 		FlowNodeTypeControlWebhookVerify:        executeControlWebhookVerify,
 	})
@@ -40,7 +42,17 @@ func executeControlConditionCompare(n *CompiledFlowNode, ctx *FlowContext) error
 		return traceError(n, err)
 	}
 
+	// The node state outlives a run of the condition, which can run again in
+	// a loop, or inside one of its own branches through a cycle. Each run
+	// starts without a match, and the outer run gets its state back after.
+	state := ctx.GetNodeState(n.ID)
+	outerBaseValue, outerItemMet := state.ConditionBaseValue, state.ConditionItemMet
+	defer func() {
+		state.ConditionBaseValue, state.ConditionItemMet = outerBaseValue, outerItemMet
+	}()
+
 	ctx.StoreNodeBaseValue(n, baseValue)
+	state.ConditionItemMet = false
 
 	var elseNode *CompiledFlowNode
 
@@ -48,7 +60,7 @@ func executeControlConditionCompare(n *CompiledFlowNode, ctx *FlowContext) error
 		if child.Type == FlowNodeTypeControlConditionItemElse {
 			elseNode = child
 		} else {
-			if err := child.Execute(ctx); err != nil {
+			if err := child.ExecuteConditionItem(ctx); err != nil {
 				return traceError(n, err)
 			}
 		}
@@ -56,7 +68,7 @@ func executeControlConditionCompare(n *CompiledFlowNode, ctx *FlowContext) error
 
 	if elseNode != nil {
 		// else node has to be executed last
-		if err := elseNode.Execute(ctx); err != nil {
+		if err := elseNode.ExecuteConditionItem(ctx); err != nil {
 			return traceError(n, err)
 		}
 	}
@@ -81,11 +93,15 @@ func executeControlConditionItemCompare(n *CompiledFlowNode, ctx *FlowContext) e
 	// check equality. With a mode like starts with, or an expression around
 	// the secret, whoever controls the base value could guess the secret a
 	// character at a time. The base value can't be one, as it's stored with
-	// the flow's state when the flow suspends.
+	// the flow's state when the flow suspends. Ignoring case would let a token
+	// with the wrong case through.
 	mode := n.Data.ConditionItemMode
-	if mode != ComparsionModeEqual && mode != ComparsionModeNotEqual &&
-		len(secretNames([]string{n.Data.ConditionItemValue})) > 0 {
+	hasSecrets := len(secretNames([]string{n.Data.ConditionItemValue})) > 0
+	if mode != ComparsionModeEqual && mode != ComparsionModeNotEqual && hasSecrets {
 		return traceError(n, fmt.Errorf("secrets can only be compared with equal or not equal"))
+	}
+	if n.Data.ConditionItemIgnoreCase && hasSecrets {
+		return traceError(n, fmt.Errorf("secrets can't be compared with ignore case"))
 	}
 	secrets, err := newPlainFlowSecrets(ctx, n.Data.ConditionItemValue)
 	if err != nil {
@@ -98,6 +114,9 @@ func executeControlConditionItemCompare(n *CompiledFlowNode, ctx *FlowContext) e
 	}
 
 	baseValue := parentState.ConditionBaseValue
+	if n.Data.ConditionItemIgnoreCase {
+		baseValue, itemValue = lowerCase(baseValue), lowerCase(itemValue)
+	}
 
 	var conditionMet bool
 	switch mode {
@@ -119,6 +138,16 @@ func executeControlConditionItemCompare(n *CompiledFlowNode, ctx *FlowContext) e
 		conditionMet = baseValue.StartsWith(&itemValue)
 	case ComparsionModeEndsWith:
 		conditionMet = baseValue.EndsWith(&itemValue)
+	// The values of the list are trimmed, so the base value is too.
+	case ComparsionModeOneOf:
+		conditionMet = slices.Contains(conditionListValues(itemValue, n.Data.ConditionItemIgnoreCase), strings.TrimSpace(baseValue.String()))
+	case ComparsionModeNotOneOf:
+		conditionMet = !slices.Contains(conditionListValues(itemValue, n.Data.ConditionItemIgnoreCase), strings.TrimSpace(baseValue.String()))
+	case ComparsionModeContainsAny:
+		base := baseValue.String()
+		conditionMet = slices.ContainsFunc(conditionListValues(itemValue, n.Data.ConditionItemIgnoreCase), func(v string) bool {
+			return strings.Contains(base, v)
+		})
 	}
 
 	if conditionMet {
@@ -127,6 +156,32 @@ func executeControlConditionItemCompare(n *CompiledFlowNode, ctx *FlowContext) e
 	}
 
 	return nil
+}
+
+// lowerCase lowercases text to compare it ignoring case. Other values, like
+// numbers or users, stay as they are, so they compare the same either way.
+func lowerCase(v thing.Thing) thing.Thing {
+	if s, ok := v.Value.(string); ok {
+		return thing.NewString(strings.ToLower(s))
+	}
+	return v
+}
+
+// conditionListValues are the values of a list mode as text: the items of a
+// placeholder that holds a list, like {{result('words')}}, or else one per line.
+// Unlike in event filters they aren't separated by commas, as message text
+// often contains them.
+func conditionListValues(value thing.Thing, ignoreCase bool) []string {
+	var values []string
+	for _, item := range listOrLines(value) {
+		if ignoreCase {
+			item = lowerCase(item)
+		}
+		if v := strings.TrimSpace(item.String()); v != "" {
+			values = append(values, v)
+		}
+	}
+	return values
 }
 
 func executeControlConditionItemUser(n *CompiledFlowNode, ctx *FlowContext) error {
@@ -231,6 +286,7 @@ func executeControlConditionItemElse(n *CompiledFlowNode, ctx *FlowContext) erro
 		FlowNodeTypeControlConditionUser,
 		FlowNodeTypeControlConditionChannel,
 		FlowNodeTypeControlConditionRole,
+		FlowNodeTypeControlConditionAIChoice,
 	)
 	if parent == nil {
 		return nil
@@ -262,20 +318,29 @@ func executeControlLoop(n *CompiledFlowNode, ctx *FlowContext) error {
 	eachNode := n.FindDirectChildWithType(FlowNodeTypeControlLoopEach)
 	endNode := n.FindDirectChildWithType(FlowNodeTypeControlLoopEnd)
 
+	// Like for conditions, each run of the loop starts without an exit, and
+	// an outer run through a cycle gets its state back after.
 	nodeState := ctx.GetNodeState(n.ID)
+	outerExited := nodeState.LoopExited
+	defer func() { nodeState.LoopExited = outerExited }()
+	nodeState.LoopExited = false
 
-	for i := 0; i < int(loopCount.Int()); i++ {
-		if nodeState.LoopExited {
-			break
-		}
+	if eachNode != nil {
+		for i := 0; i < int(loopCount.Int()); i++ {
+			if nodeState.LoopExited || ctx.ended {
+				break
+			}
 
-		if err := eachNode.Execute(ctx); err != nil {
-			return traceError(n, err)
+			if err := eachNode.Execute(ctx); err != nil {
+				return traceError(n, err)
+			}
 		}
 	}
 
-	if err := endNode.Execute(ctx); err != nil {
-		return traceError(n, err)
+	if endNode != nil {
+		if err := endNode.Execute(ctx); err != nil {
+			return traceError(n, err)
+		}
 	}
 
 	return nil
@@ -296,6 +361,11 @@ func executeControlLoopExit(n *CompiledFlowNode, ctx *FlowContext) error {
 		ctx.GetNodeState(loop.ID).LoopExited = true
 	}
 
+	return nil
+}
+
+func executeControlFlowEnd(n *CompiledFlowNode, ctx *FlowContext) error {
+	ctx.ended = true
 	return nil
 }
 

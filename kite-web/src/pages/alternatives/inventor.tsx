@@ -13,6 +13,7 @@ const content: ComparisonPageContent = {
   description:
     "Looking for an inventor.bot alternative? Kite is a free, open source Discord bot maker. Make up to 10 bots for free and build them in a visual editor.",
   competitor: "inventor.bot",
+  lastChecked: "October 2026",
   heading: "A Free inventor.bot Alternative",
   intro:
     "Kite and inventor.bot (formerly inventor.gg) both let you make a Discord bot with a visual editor. With Kite you can make up to 10 bots for free, and Kite is open source.",
@@ -53,7 +54,7 @@ const content: ComparisonPageContent = {
     },
     {
       feature: "Ready-made features",
-      kite: "Templates and plugins",
+      kite: "Templates",
       competitor: "Plugins",
     },
   ],
@@ -65,9 +66,9 @@ const content: ComparisonPageContent = {
     },
     aiBuilderPoint,
     {
-      title: "Templates and Plugins",
+      title: "Templates You Can Change",
       description:
-        "Import templates for moderation, welcome messages and an AI chatbot, or turn on the Counting and Starboard plugins.",
+        "Add templates for moderation, welcome messages, counting, a starboard or an AI chatbot, and change every block of them.",
     },
     openSourcePoint,
   ],

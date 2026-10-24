@@ -6,7 +6,7 @@ import {
   useReactFlow,
   useStoreApi,
 } from "@xyflow/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import FlowEditor, { FlowEditorApi } from "./FlowEditor";
 import FlowMenu from "./FlowMenu";
 import { Command, EventListener, LogEntry } from "@/lib/types/wire.gen";
@@ -20,6 +20,7 @@ import FlowNodeEditorDrawer from "./FlowNodeEditorDrawer";
 import FlowLogsDrawer from "./FlowLogsDrawer";
 import FlowSecretsDrawer from "./FlowSecretsDrawer";
 import { useIsMobile } from "@/lib/hooks/use-mobile";
+import { useFlowParametersStore } from "@/lib/flow/parametersStore";
 
 interface Props {
   flowData: FlowData;
@@ -27,11 +28,14 @@ interface Props {
   context: FlowContextType;
   command?: Command;
   eventListener?: EventListener;
+  viewportKey?: string;
   onChange: () => void;
   // Whether the AI chat is open, if it's opened from outside, like the page's
   // header. Otherwise the editor shows its own button for it.
   chatOpen?: boolean;
   onChatOpenChange?: (open: boolean) => void;
+  // Goes up when the flow is saved, which keeps the AI's changes.
+  saveCount?: number;
 }
 
 export default function Flow({
@@ -40,9 +44,11 @@ export default function Flow({
   context,
   command,
   eventListener,
+  viewportKey,
   onChange,
   chatOpen: controlledChatOpen,
   onChatOpenChange,
+  saveCount,
 }: Props) {
   const isMobile = useIsMobile();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -65,6 +71,13 @@ export default function Flow({
 
   const { fitView } = useReactFlow();
   const store = useStoreApi();
+
+  // Changing a parameter is a change of the flow like changing a block.
+  const parametersStore = useFlowParametersStore();
+  useEffect(
+    () => parametersStore.subscribe(() => onChange()),
+    [parametersStore, onChange]
+  );
 
   const onSelectionChange = useCallback(
     ({ nodes }: OnSelectionChangeParams) => {
@@ -145,6 +158,7 @@ export default function Flow({
             onHistoryChange={handleHistoryChange}
             containerRef={containerRef}
             apiRef={editorRef}
+            viewportKey={viewportKey}
           />
           {controlledChatOpen === undefined && !chatOpen && (
             <Button
@@ -166,7 +180,11 @@ export default function Flow({
               !chatOpen && "hidden"
             )}
           >
-            <FlowAIChat editorRef={editorRef} onClose={closeChat} />
+            <FlowAIChat
+              editorRef={editorRef}
+              saveCount={saveCount}
+              onClose={closeChat}
+            />
           </div>
         )}
 

@@ -6,6 +6,7 @@ import {
   KeyRoundIcon,
   LucideIcon,
   MessageSquareWarningIcon,
+  SlidersHorizontalIcon,
   TextCursorInputIcon,
 } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -13,10 +14,18 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import FlowLogList from "./FlowLogList";
 import FlowNodeEditor from "./FlowNodeEditor";
 import FlowNodeExplorer from "./FlowNodeExplorer";
+import FlowParameterList from "./FlowParameterList";
 import FlowSecretList from "./FlowSecretList";
 import { useStoreApi } from "@xyflow/react";
+import { useMissingParameterCount } from "@/lib/flow/parametersStore";
 
-type Tab = "action" | "control_flow" | "option" | "secrets" | "logs";
+type Tab =
+  | "action"
+  | "control_flow"
+  | "option"
+  | "parameters"
+  | "secrets"
+  | "logs";
 
 export default function FlowMenu({
   selectedNodeId,
@@ -28,6 +37,7 @@ export default function FlowMenu({
   const [tab, setTab] = useState<Tab>("action");
 
   const store = useStoreApi();
+  const missingParameters = useMissingParameterCount();
 
   const wrappedSetTab = useCallback(
     (tab: Tab) => {
@@ -65,6 +75,18 @@ export default function FlowMenu({
         </div>
         <div className="flex-none flex flex-col items-center gap-1">
           <Tab
+            id="parameters"
+            icon={SlidersHorizontalIcon}
+            title={
+              missingParameters
+                ? `Parameters (${missingParameters} without a value)`
+                : "Parameters"
+            }
+            badge={missingParameters}
+            tab={tab}
+            setTab={wrappedSetTab}
+          />
+          <Tab
             id="secrets"
             icon={KeyRoundIcon}
             title="Secrets & Values"
@@ -85,6 +107,8 @@ export default function FlowMenu({
           <FlowNodeExplorer category={tab} />
         )}
 
+        {tab === "parameters" && <FlowParameterList />}
+
         {tab === "secrets" && <FlowSecretList />}
 
         {tab === "logs" && <FlowLogList logs={logs} />}
@@ -101,10 +125,13 @@ function Tab({
   title,
   tab,
   setTab,
+  badge,
 }: {
   id: Tab;
   icon: LucideIcon;
   title: string;
+  // Shown on the icon unless it's 0.
+  badge?: number;
   tab: Tab;
   setTab: (tab: Tab) => void;
 }) {
@@ -121,7 +148,14 @@ function Tab({
           onClick={() => setTab(id)}
           role="button"
         >
-          <Icon className="size-8" />
+          <div className="relative">
+            <Icon className="size-8" />
+            {!!badge && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-[10px] font-semibold leading-4 text-white text-center">
+                {badge}
+              </span>
+            )}
+          </div>
         </div>
       </TooltipTrigger>
       <TooltipContent side="right">{title}</TooltipContent>

@@ -1,6 +1,7 @@
 import { useRouter } from "next/router";
 import { useEffect } from "react";
 import {
+  useAppCollaboratorInvitesQuery,
   useAppCollaboratorsQuery,
   useAppEmojisQuery,
   useAppEntitiesQuery,
@@ -8,6 +9,7 @@ import {
   useAppsQuery,
   useAppStateGuildChannelsQuery,
   useAppStateGuildRolesQuery,
+  useAppStateEmojisQuery,
   useAppStateGuildsQuery,
   useAppSubscriptionsQuery,
   useBillingPlansQuery,
@@ -15,6 +17,7 @@ import {
   useCommandsQuery,
   useEventListenerQuery,
   useEventListenersQuery,
+  useBundleInstallsQuery,
   useAppFeaturesQuery,
   useFlowAIUsageQuery,
   useLogEntriesQuery,
@@ -36,6 +39,7 @@ import {
 } from "../api/queries";
 import { APIResponse } from "../api/response";
 import {
+  AppCollaboratorInviteListResponse,
   AppCollaboratorListResponse,
   AppEmojiListResponse,
   AppEntityListResponse,
@@ -46,6 +50,7 @@ import {
   CommandListResponse,
   EventListenerGetResponse,
   EventListenerListResponse,
+  BundleInstallListResponse,
   FeaturesGetResponse,
   FlowAIUsageGetResponse,
   LogSummaryGetResponse,
@@ -57,6 +62,7 @@ import {
   PluginListResponse,
   StateGuildChannelListResponse,
   StateGuildRoleListResponse,
+  StateEmojiListResponse,
   StateGuildListResponse,
   SubscriptionListResponse,
   UsageByDayListResponse,
@@ -144,6 +150,15 @@ export function useCommand(
     router.query.appId as string,
     router.query.cmdId as string
   );
+  return useResponseData(query, callback);
+}
+
+export function useBundleInstalls(
+  callback?: (res: APIResponse<BundleInstallListResponse>) => void
+) {
+  const router = useRouter();
+
+  const query = useBundleInstallsQuery(router.query.appId as string);
   return useResponseData(query, callback);
 }
 
@@ -297,6 +312,14 @@ export function useAppStateGuild(guildId: string | null) {
   return data?.find((g) => g!.id === guildId);
 }
 
+export function useAppStateEmojis(
+  callback?: (res: APIResponse<StateEmojiListResponse>) => void
+) {
+  const router = useRouter();
+  const query = useAppStateEmojisQuery(router.query.appId as string);
+  return useResponseData(query, callback);
+}
+
 export function useAppStateGuildRoles(
   guildId: string | null,
   callback?: (res: APIResponse<StateGuildRoleListResponse>) => void
@@ -344,6 +367,15 @@ export function useAppCollaborators(
   const router = useRouter();
 
   const query = useAppCollaboratorsQuery(router.query.appId as string);
+  return useResponseData(query, callback);
+}
+
+export function useAppCollaboratorInvites(
+  callback?: (res: APIResponse<AppCollaboratorInviteListResponse>) => void
+) {
+  const router = useRouter();
+
+  const query = useAppCollaboratorInvitesQuery(router.query.appId as string);
   return useResponseData(query, callback);
 }
 

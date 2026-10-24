@@ -24,6 +24,11 @@ export interface App {
    * accept its token.
    */
   token_invalid: boolean;
+  /**
+   * NoCredits is set when the app was disabled because it used all of its
+   * credits for the month.
+   */
+  no_credits: boolean;
   commands_deploy_pending: boolean;
   commands_deploy_error?: CommandsDeployError;
   /**
@@ -144,6 +149,16 @@ export interface AppStateStatus {
   online: boolean;
 }
 export type StateStatusGetResponse = AppStateStatus;
+/**
+ * StateUser is the Discord user the app's bot sends messages as. It's empty
+ * while the app isn't running.
+ */
+export interface StateUser {
+  id: string;
+  username: string;
+  avatar_url: string;
+}
+export type StateUserGetResponse = StateUser;
 export interface Guild {
   id: string;
   name: string;
@@ -187,6 +202,16 @@ export interface Role {
   position: number /* int */;
 }
 export type StateGuildRoleListResponse = (Role | undefined)[];
+/**
+ * StateGuildEmojis are the custom emojis of one guild the app is in. The app
+ * can use them in messages and components like its own emojis.
+ */
+export interface StateGuildEmojis {
+  guild_id: string;
+  guild_name: string;
+  emojis: (AppEmoji | undefined)[];
+}
+export type StateEmojiListResponse = (StateGuildEmojis | undefined)[];
 
 //////////
 // source: asset.go
@@ -194,7 +219,7 @@ export type StateGuildRoleListResponse = (Role | undefined)[];
 export interface Asset {
   id: string;
   app_id: string;
-  module_id: null | string;
+  bundle_install_id: null | string;
   creator_user_id: string;
   url: string;
   name: string;
@@ -216,39 +241,6 @@ export type AuthLogoutResponse = Empty;
 //////////
 // source: billing.go
 
-export interface BillingWebhookRequest {
-  meta: {
-    event_name: string;
-    custom_data: { [key: string]: any};
-  };
-  data: {
-    id: string;
-    attributes: {
-      store_id: number /* int */;
-      customer_id: number /* int */;
-      order_id: number /* int */;
-      order_item_id: number /* int */;
-      product_id: number /* int */;
-      variant_id: number /* int */;
-      product_name: string;
-      variant_name: string;
-      user_name: string;
-      user_email: string;
-      status: string;
-      status_formatted: string;
-      card_brand: string;
-      card_last_four: string;
-      cancelled: boolean;
-      trial_ends_at: null | string /* RFC3339 */;
-      billing_anchor: number /* int */;
-      renews_at: null | string /* RFC3339 */;
-      ends_at: null | string /* RFC3339 */;
-      created_at: string /* RFC3339 */;
-      updated_at: string /* RFC3339 */;
-      test_mode: boolean;
-    };
-  };
-}
 export interface BillingWebhookResponse {
 }
 export interface BillingCheckoutRequest {
@@ -300,6 +292,8 @@ export interface BillingPlan {
   hidden: boolean;
   lemonsqueezy_product_id: string;
   lemonsqueezy_variant_id: string;
+  yearly_price: number /* float32 */;
+  lemonsqueezy_yearly_variant_id: string;
   discord_role_id: string;
   feature_max_collaborators: number /* int */;
   feature_usage_credits_per_month: number /* int */;
@@ -313,9 +307,169 @@ export interface BillingPlan {
   feature_rotating_status: boolean;
   feature_max_scheduled_event_listeners: number /* int */;
   feature_min_schedule_interval_seconds: number /* int */;
+  feature_max_webhook_event_listeners: number /* int */;
   feature_max_ai_prompts_per_month: number /* int */;
 }
 export type BillingPlanListResponse = (BillingPlan | undefined)[];
+
+//////////
+// source: bundle.go
+
+/**
+ * Bundle is a bundle with the content of the version apps install.
+ */
+export interface Bundle {
+  id: string;
+  version: number /* int */;
+  name: string;
+  description: string;
+  /**
+   * Listing is null for bundles that weren't published.
+   */
+  listing?: BundleListing;
+  /**
+   * Content is the version in the format of the templates of kite-web.
+   */
+  content: Record<string, any> | null;
+}
+/**
+ * BundleListing is how a published bundle is shown.
+ */
+export interface BundleListing {
+  icon: string;
+  category: string;
+  about: string[];
+  faq: BundleFAQ[];
+  setup: string[];
+}
+export interface BundleFAQ {
+  question: string;
+  answer: string;
+}
+export type BundleListResponse = (Bundle | undefined)[];
+export type BundleGetResponse = Bundle;
+
+//////////
+// source: bundle_install.go
+
+export interface BundleInstall {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  app_id: string;
+  bundle_id: string;
+  bundle_version: number /* int */;
+  parameters: { [key: string]: string};
+  items: BundleInstallItem[];
+  created_at: string /* RFC3339 */;
+  updated_at: string /* RFC3339 */;
+}
+/**
+ * BundleInstallItem is a command, event listener or message the install
+ * created.
+ */
+export interface BundleInstallItem {
+  key: string;
+  type: string;
+  id: string;
+  /**
+   * Edited is whether the user changed it since it was installed or updated.
+   */
+  edited: boolean;
+  /**
+   * Deleted is whether the user deleted it. An update doesn't add it again.
+   */
+  deleted: boolean;
+  /**
+   * Parameters are the values its flows have now, which can differ from the
+   * install's after a change in the editor.
+   */
+  parameters: { [key: string]: string};
+}
+export type BundleInstallListResponse = (BundleInstall | undefined)[];
+/**
+ * BundleInstallCreateRequest installs items of a bundle. The service fills in
+ * the parameters, so an install is always the bundle at that version.
+ */
+export interface BundleInstallCreateRequest {
+  bundle_id: string;
+  /**
+   * BundleVersion is the version the user chose the items and parameters for.
+   */
+  bundle_version: number /* int */;
+  parameters: { [key: string]: string};
+  /**
+   * Items are the keys of the commands, event listeners and messages to add.
+   */
+  items: string[];
+}
+export type BundleInstallCreateResponse = BundleInstall;
+/**
+ * BundleInstallUpdateRequest updates an install to the current version of its
+ * bundle. Items the user deleted stay deleted, and edited ones are kept unless
+ * they're in Overwrite.
+ */
+export interface BundleInstallUpdateRequest {
+  /**
+   * BundleVersion is the version the user saw the changes of.
+   */
+  bundle_version: number /* int */;
+  /**
+   * Parameters are values for parameters the new version needs, the install
+   * keeps the values of the others.
+   */
+  parameters: { [key: string]: string};
+  /**
+   * Overwrite are the keys of edited items to replace with the new version.
+   */
+  overwrite: string[];
+}
+export type BundleInstallUpdateResponse = BundleInstall;
+export type BundleInstallDeleteResponse = Empty;
+/**
+ * BundleInstallParametersUpdateRequest sets parameters of an install in every
+ * flow it created that uses them, also where they were changed in the editor.
+ */
+export interface BundleInstallParametersUpdateRequest {
+  parameters: { [key: string]: string};
+}
+export type BundleInstallParametersUpdateResponse = BundleInstall;
+/**
+ * BundleExportRequest exports items of the app as a bundle. The message
+ * templates and stored variables they use are exported with them.
+ */
+export interface BundleExportRequest {
+  command_ids: string[];
+  event_listener_ids: string[];
+  message_ids: string[];
+}
+export interface BundleExportResponse {
+  /**
+   * Content is the bundle, whose parameters are the ones of its flows.
+   */
+  content: Record<string, any> | null;
+}
+/**
+ * BundleImportRequest imports items of an exported bundle with the parameters
+ * filled in. The items are copies, they aren't linked to the bundle.
+ */
+export interface BundleImportRequest {
+  content: Record<string, any> | null;
+  parameters: { [key: string]: string};
+  /**
+   * Items are the keys of the commands, event listeners, messages and
+   * variables to add.
+   */
+  items: string[];
+}
+export interface BundleImportResponse {
+  /**
+   * Items are what the import created, keyed like the bundle. Messages and
+   * variables the app already had aren't created again.
+   */
+  items: BundleInstallItem[];
+}
 
 //////////
 // source: collaborator.go
@@ -327,12 +481,30 @@ export interface AppCollaborator {
   updated_at: string /* RFC3339 */;
 }
 export type AppCollaboratorListResponse = (AppCollaborator | undefined)[];
+export interface AppCollaboratorInvite {
+  discord_username: string;
+  role: string;
+  created_at: string /* RFC3339 */;
+  expires_at: string /* RFC3339 */;
+}
 export interface AppCollaboratorCreateRequest {
-  discord_user_id: string;
+  /**
+   * DiscordUser is the user's Discord ID or username.
+   */
+  discord_user: string;
   role: string;
 }
-export type AppCollaboratorCreateResponse = AppCollaborator;
+/**
+ * AppCollaboratorCreateResponse has the invite instead of the collaborator when
+ * the user hasn't logged in to Kite yet.
+ */
+export interface AppCollaboratorCreateResponse {
+  collaborator?: AppCollaborator;
+  invite?: AppCollaboratorInvite;
+}
 export type AppCollaboratorDeleteResponse = Empty;
+export type AppCollaboratorInviteListResponse = (AppCollaboratorInvite | undefined)[];
+export type AppCollaboratorInviteDeleteResponse = Empty;
 
 //////////
 // source: command.go
@@ -343,7 +515,7 @@ export interface Command {
   description: string;
   enabled: boolean;
   app_id: string;
-  module_id: null | string;
+  bundle_install_id: null | string;
   creator_user_id: string;
   flow_source: FlowData;
   created_at: string /* RFC3339 */;
@@ -381,7 +553,7 @@ export interface EventListener {
   description: string;
   enabled: boolean;
   app_id: string;
-  module_id: null | string;
+  bundle_install_id: null | string;
   creator_user_id: string;
   filter?: EventListenerFilter;
   flow_source: FlowData;
@@ -432,6 +604,7 @@ export interface Features {
   rotating_status: boolean;
   max_scheduled_event_listeners: number /* int */;
   min_schedule_interval_seconds: number /* int */;
+  max_webhook_event_listeners: number /* int */;
   max_ai_prompts_per_month: number /* int */;
 }
 export type FeaturesGetResponse = Features;
@@ -572,7 +745,7 @@ export interface Message {
   name: string;
   description: null | string;
   app_id: string;
-  module_id: null | string;
+  bundle_install_id: null | string;
   creator_user_id: string;
   data: MessageData;
   flow_sources: { [key: string]: FlowData};
@@ -744,7 +917,7 @@ export interface Variable {
   name: string;
   scoped: boolean;
   app_id: string;
-  module_id: null | string;
+  bundle_install_id: null | string;
   total_values: null | number;
   created_at: string /* RFC3339 */;
   updated_at: string /* RFC3339 */;

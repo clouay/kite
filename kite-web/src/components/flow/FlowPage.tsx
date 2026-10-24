@@ -1,16 +1,21 @@
-import { FlowData, NodeType } from "@/lib/flow/dataSchema";
+import { FlowData } from "@/lib/flow/dataSchema";
 import FlowNav from "./FlowNav";
-import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
+import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useState } from "react";
 import Flow from "./Flow";
 import { FlowContextType } from "@/lib/flow/context";
 import { Command, EventListener, LogEntry } from "@/lib/types/wire.gen";
 import UnsavedChangesDialog from "@/components/common/UnsavedChangesDialog";
+import {
+  FlowParametersProvider,
+  useGetFlowData,
+} from "@/lib/flow/parametersStore";
 
 interface Props {
   flowData: FlowData;
   logs?: LogEntry[];
   context: FlowContextType;
+  viewportKey?: string;
   hasUnsavedChanges: boolean;
   command?: Command;
   eventListener?: EventListener;
@@ -24,6 +29,7 @@ function InnerFlowPage({
   flowData,
   logs,
   context,
+  viewportKey,
   hasUnsavedChanges,
   onChange,
   isSaving,
@@ -32,21 +38,27 @@ function InnerFlowPage({
   onSave,
   onExit,
 }: Props) {
-  const { getNodes, getEdges } = useReactFlow<NodeType>();
+  const getFlowData = useGetFlowData();
   const [chatOpen, setChatOpen] = useState(false);
   const [unsavedDialogOpen, setUnsavedDialogOpen] = useState(false);
+  const [saveCount, setSaveCount] = useState(0);
+
+  const handleSave = useCallback<Props["onSave"]>(
+    (data, options) =>
+      onSave(data, {
+        onSuccess: () => {
+          setSaveCount((c) => c + 1);
+          options?.onSuccess?.();
+        },
+      }),
+    [onSave]
+  );
 
   const save = useCallback(
     (options?: { onSuccess?: () => void }) => {
-      onSave(
-        {
-          nodes: getNodes(),
-          edges: getEdges(),
-        },
-        options
-      );
+      handleSave(getFlowData(), options);
     },
-    [getNodes, getEdges, onSave]
+    [getFlowData, handleSave]
   );
 
   const handleExitRequest = useCallback(() => {
@@ -78,8 +90,7 @@ function InnerFlowPage({
           hasUnsavedChanges={hasUnsavedChanges}
           isSaving={isSaving}
           command={command}
-
-          onSave={onSave}
+          onSave={handleSave}
           onExit={handleExitRequest}
           chatOpen={chatOpen}
           onChatOpenChange={setChatOpen}
@@ -91,9 +102,11 @@ function InnerFlowPage({
         context={context}
         command={command}
         eventListener={eventListener}
+        viewportKey={viewportKey}
         onChange={onChange}
         chatOpen={chatOpen}
         onChatOpenChange={setChatOpen}
+        saveCount={saveCount}
       />
       <UnsavedChangesDialog
         open={unsavedDialogOpen}
@@ -109,7 +122,9 @@ function InnerFlowPage({
 export default function FlowPage(props: Props) {
   return (
     <ReactFlowProvider>
-      <InnerFlowPage {...props} />
+      <FlowParametersProvider initial={props.flowData.parameters}>
+        <InnerFlowPage {...props} />
+      </FlowParametersProvider>
     </ReactFlowProvider>
   );
 }

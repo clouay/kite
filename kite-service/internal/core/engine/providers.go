@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -162,7 +163,7 @@ func (p *DiscordProvider) CreateInteractionResponse(ctx context.Context, interac
 		} `json:"resource"`
 	}
 	if err := sendpart.POST(p.session.Client.Client, response, &res, endpoint); err != nil {
-		return nil, fmt.Errorf("failed to respond to interaction: %w", err)
+		return nil, fmt.Errorf("failed to respond to interaction: %w", withoutRequestURL(err))
 	}
 
 	p.interactionsWithResponse[interactionID] = struct{}{}
@@ -176,7 +177,7 @@ func (p *DiscordProvider) CreateInteractionResponse(ctx context.Context, interac
 func (p *DiscordProvider) EditInteractionResponse(ctx context.Context, applicationID discord.AppID, token string, response api.EditInteractionResponseData) (*discord.Message, error) {
 	msg, err := p.session.EditInteractionResponse(applicationID, token, response)
 	if err != nil {
-		return nil, fmt.Errorf("failed to edit interaction response: %w", err)
+		return nil, fmt.Errorf("failed to edit interaction response: %w", withoutRequestURL(err))
 	}
 
 	return msg, err
@@ -185,7 +186,7 @@ func (p *DiscordProvider) EditInteractionResponse(ctx context.Context, applicati
 func (p *DiscordProvider) DeleteInteractionResponse(ctx context.Context, applicationID discord.AppID, token string) error {
 	err := p.session.DeleteInteractionResponse(applicationID, token)
 	if err != nil {
-		return fmt.Errorf("failed to delete interaction response: %w", err)
+		return fmt.Errorf("failed to delete interaction response: %w", withoutRequestURL(err))
 	}
 
 	return nil
@@ -194,7 +195,7 @@ func (p *DiscordProvider) DeleteInteractionResponse(ctx context.Context, applica
 func (p *DiscordProvider) CreateInteractionFollowup(ctx context.Context, applicationID discord.AppID, token string, data api.InteractionResponseData) (*discord.Message, error) {
 	msg, err := p.session.FollowUpInteraction(applicationID, token, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create interaction followup: %w", err)
+		return nil, fmt.Errorf("failed to create interaction followup: %w", withoutRequestURL(err))
 	}
 
 	return msg, nil
@@ -203,7 +204,7 @@ func (p *DiscordProvider) CreateInteractionFollowup(ctx context.Context, applica
 func (p *DiscordProvider) EditInteractionFollowup(ctx context.Context, applicationID discord.AppID, token string, messageID discord.MessageID, data api.EditInteractionResponseData) (*discord.Message, error) {
 	msg, err := p.session.EditInteractionFollowup(applicationID, messageID, token, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to edit interaction followup: %w", err)
+		return nil, fmt.Errorf("failed to edit interaction followup: %w", withoutRequestURL(err))
 	}
 
 	return msg, nil
@@ -212,7 +213,7 @@ func (p *DiscordProvider) EditInteractionFollowup(ctx context.Context, applicati
 func (p *DiscordProvider) DeleteInteractionFollowup(ctx context.Context, applicationID discord.AppID, token string, messageID discord.MessageID) error {
 	err := p.session.DeleteInteractionFollowup(applicationID, messageID, token)
 	if err != nil {
-		return fmt.Errorf("failed to delete interaction followup: %w", err)
+		return fmt.Errorf("failed to delete interaction followup: %w", withoutRequestURL(err))
 	}
 
 	return nil
@@ -262,6 +263,33 @@ func (p *DiscordProvider) CreatePoll(ctx context.Context, channelID discord.Chan
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create poll: %w", err)
+	}
+
+	return &msg, nil
+}
+
+func (p *DiscordProvider) ForwardMessage(ctx context.Context, channelID discord.ChannelID, messageChannelID discord.ChannelID, messageID discord.MessageID) (*discord.Message, error) {
+	// arikawa rejects messages without content, embeds, files or components,
+	// which forwards are, so the request is built by hand.
+	body := struct {
+		MessageReference discord.MessageReference `json:"message_reference"`
+	}{
+		MessageReference: discord.MessageReference{
+			Type:      discord.MessageReferenceTypeForward,
+			MessageID: messageID,
+			ChannelID: messageChannelID,
+		},
+	}
+
+	var msg discord.Message
+	err := p.session.RequestJSON(
+		&msg,
+		http.MethodPost,
+		api.EndpointChannels+channelID.String()+"/messages",
+		httputil.WithJSONBody(body),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to forward message: %w", err)
 	}
 
 	return &msg, nil
@@ -344,7 +372,7 @@ func (p *DiscordProvider) APIRequest(ctx context.Context, req provider.DiscordAP
 		opts...,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send Discord API request: %w", err)
+		return nil, fmt.Errorf("failed to send Discord API request: %w", withoutRequestURL(err))
 	}
 
 	body := resp.GetBody()
@@ -399,11 +427,34 @@ func (p *DiscordProvider) UpdatePresence(ctx context.Context, status discord.Sta
 	return nil
 }
 
+func (p *DiscordProvider) LeaveGuild(ctx context.Context, guildID discord.GuildID) error {
+	err := p.session.Client.WithContext(ctx).LeaveGuild(guildID)
+	if err != nil {
+		return fmt.Errorf("failed to leave server: %w", err)
+	}
+
+	return nil
+}
+
 func (p *DiscordProvider) allowGatewayCommand() error {
 	if !p.rateLimiter.Allow(p.appID, gatewayCommandRateLimit) {
 		return fmt.Errorf("blocks that change the status or voice state are rate limited, try again in a few seconds")
 	}
 	return nil
+}
+
+// withoutRequestURL removes the path from the error of a request that never
+// reached Discord, as it can contain an interaction token.
+func withoutRequestURL(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		if u, parseErr := url.Parse(urlErr.URL); parseErr == nil {
+			urlErr.URL = u.Scheme + "://" + u.Host
+		} else {
+			urlErr.URL = ""
+		}
+	}
+	return err
 }
 
 func (p *DiscordProvider) AppVerifyKey(ctx context.Context) (string, error) {
@@ -600,6 +651,135 @@ func (p *AIProvider) CreateResponse(ctx context.Context, opts provider.CreateRes
 		return "", fmt.Errorf("response incomplete: %s", resp.IncompleteDetails.Reason)
 	}
 	return text, nil
+}
+
+const openRouterDecisionsURL = "https://openrouter.ai/api/alpha/decisions"
+
+// DecisionProvider asks decision models through OpenRouter's decisions API.
+type DecisionProvider struct {
+	client *http.Client
+	apiKey string
+	url    string
+}
+
+func NewDecisionProvider(client *http.Client, apiKey string) *DecisionProvider {
+	return &DecisionProvider{
+		client: client,
+		apiKey: apiKey,
+		url:    openRouterDecisionsURL,
+	}
+}
+
+type decisionQuestion struct {
+	Type         provider.DecisionType `json:"type"`
+	Instructions string                `json:"instructions"`
+	Criteria     any                   `json:"criteria"`
+}
+
+type decisionAnswer struct {
+	Choice        string             `json:"choice"`
+	Noul          float64            `json:"noul"`
+	Score         float64            `json:"score"`
+	Confidence    *float64           `json:"confidence"`
+	Probabilities map[string]float64 `json:"probabilities"`
+}
+
+func (p *DecisionProvider) Decide(ctx context.Context, opts provider.DecideOpts) (provider.Decision, error) {
+	var criteria any
+	switch opts.Type {
+	case provider.DecisionTypeScore:
+		criteria = opts.Levels
+	default:
+		// Options without guidance are sent as null, which the API takes as
+		// just the name.
+		options := make(map[string]any, len(opts.Options))
+		for name, guidance := range opts.Options {
+			if guidance == "" {
+				options[name] = nil
+			} else {
+				options[name] = guidance
+			}
+		}
+		criteria = options
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"model": opts.Model,
+		"state": opts.Input,
+		"questions": map[string]decisionQuestion{
+			"answer": {
+				Type:         opts.Type,
+				Instructions: opts.Question,
+				Criteria:     criteria,
+			},
+		},
+	})
+	if err != nil {
+		return provider.Decision{}, fmt.Errorf("failed to marshal decision request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.url, bytes.NewReader(body))
+	if err != nil {
+		return provider.Decision{}, fmt.Errorf("failed to create decision request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return provider.Decision{}, fmt.Errorf("failed to get decision: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var res struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&res)
+
+		// Problems with Kite's own key or credits are the operator's, not
+		// something the app's flow should show.
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden:
+			slog.Error("OpenRouter rejected decision request", slog.Int("status", resp.StatusCode), slog.String("message", res.Error.Message))
+			return provider.Decision{}, errors.New("failed to get decision: AI is unavailable right now")
+		}
+		return provider.Decision{}, fmt.Errorf("failed to get decision: status %d: %s", resp.StatusCode, res.Error.Message)
+	}
+
+	var res struct {
+		Answers map[string]decisionAnswer `json:"answers"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).Decode(&res); err != nil {
+		return provider.Decision{}, fmt.Errorf("failed to decode decision: %w", err)
+	}
+
+	answer, ok := res.Answers["answer"]
+	if !ok {
+		return provider.Decision{}, errors.New("decision has no answer")
+	}
+
+	decision := provider.Decision{
+		Choice: answer.Choice,
+		Noul:   answer.Noul,
+		Score:  answer.Score,
+	}
+	if answer.Confidence != nil {
+		decision.Confidence = *answer.Confidence
+	} else {
+		decision.Confidence = answer.Probabilities[answer.Choice]
+	}
+	return decision, nil
+}
+
+// noDecisionProvider is used without an OpenRouter key. It fails, as a flow
+// shouldn't act on an answer no model gave.
+type noDecisionProvider struct{}
+
+func (noDecisionProvider) Decide(ctx context.Context, opts provider.DecideOpts) (provider.Decision, error) {
+	return provider.Decision{}, errors.New("AI decisions aren't configured")
 }
 
 // Variable IDs come from user-authored flow data, so lookups are scoped to the app.

@@ -15,6 +15,9 @@ export type BlockFieldType =
   // A list placeholder, or IDs separated by commas or spaces.
   | "snowflake_list"
   | "integer"
+  // A color, sent as a number. Also takes a hex code like #ff0000, and is
+  // edited with a color picker.
+  | "color"
   // A number of seconds. Fractions are dropped, like before these blocks were
   // requests.
   | "seconds"
@@ -97,16 +100,15 @@ export type BlockComponent =
   | "entry_command"
   | "entry_event"
   | "entry_component_button"
-  | "condition_compare"
-  | "condition_user"
-  | "condition_channel"
-  | "condition_role"
+  // A condition, whose plus button adds the branch type it owns.
+  | "condition"
   | "condition_item"
   | "control_loop"
   | "control_loop_each"
   | "control_loop_end"
-  | "control_loop_exit"
   | "control_sleep"
+  // An input and no outputs.
+  | "terminal"
   // A labeled handle for each output, see output_labels.
   | "branches"
   | "suspend";
@@ -114,6 +116,9 @@ export type BlockComponent =
 export interface BlockDefinition {
   // Node type, namespaced by the integration it acts on except for Discord.
   type: string;
+  // Start of the IDs of new blocks, like "message" for message_k3f. Short, so
+  // placeholders like result('message_k3f') stay short.
+  id_prefix: string;
   title: string;
   description: string;
   icon: string;

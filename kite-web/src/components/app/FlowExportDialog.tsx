@@ -17,8 +17,14 @@ import { useAppId } from "@/lib/hooks/params";
 import { useAppSecrets, useMessages } from "@/lib/hooks/api";
 import { collectReferencedMessages } from "@/lib/flow/messageTemplates";
 import { getReferencedSecrets } from "@/lib/flow/secrets";
+import { scanFlowsForSecrets } from "@/lib/flow/secretScanner";
 import { FlowData } from "@/lib/types/flow.gen";
-import { BracesIcon, CopyIcon, KeyRoundIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  BracesIcon,
+  CopyIcon,
+  KeyRoundIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 type ExportProps = {
@@ -63,6 +69,7 @@ export function ExportForm({
 }: ExportProps) {
   const [showJson, setShowJson] = useState(false);
   const [code, setCode] = useState<string | null>(null);
+  const [confirmedSecrets, setConfirmedSecrets] = useState(false);
 
   const appId = useAppId();
   const createMutation = useShareCodeCreateMutation(appId);
@@ -72,6 +79,56 @@ export function ExportForm({
   const bundledMessages = messages
     ? collectReferencedMessages(flows, messages, excludeMessageIds)
     : null;
+
+  const suspectedSecrets = useMemo(() => {
+    const all = [
+      ...flows.filter((f): f is FlowData => Boolean(f)),
+      ...(bundledMessages?.flatMap((m) =>
+        Object.values(m.flow_sources ?? {})
+      ) ?? []),
+    ];
+    return scanFlowsForSecrets(all);
+  }, [flows, bundledMessages]);
+
+  const hasUnconfirmedSecrets =
+    suspectedSecrets.length > 0 && !confirmedSecrets;
+
+  const secretsWarning = hasUnconfirmedSecrets && (
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs space-y-2.5">
+      <div className="flex items-center gap-2 font-medium text-amber-600 dark:text-amber-400">
+        <AlertTriangleIcon className="h-4 w-4 shrink-0" />
+        <span>Possible secrets in this export</span>
+      </div>
+      <p className="text-muted-foreground">
+        These values look like API keys or tokens. Replace them with
+        placeholders so they aren&apos;t shared:
+      </p>
+      <div className="max-h-28 overflow-y-auto space-y-1 font-mono text-[11px] bg-background/60 rounded p-2 border">
+        {suspectedSecrets.map((s, i) => (
+          <div key={i} className="flex items-center justify-between gap-2">
+            <span className="truncate">
+              <span className="text-foreground font-semibold">
+                {s.blockTitle}
+              </span>
+              <span className="text-muted-foreground"> ({s.fieldName})</span>
+            </span>
+            <span className="text-amber-600 dark:text-amber-400 shrink-0 font-medium">
+              {s.masked}
+            </span>
+          </div>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full text-xs"
+        onClick={() => setConfirmedSecrets(true)}
+      >
+        I know, share anyway
+      </Button>
+    </div>
+  );
 
   const bundledSecrets = useMemo(() => {
     if (!bundledMessages) return null;
@@ -178,6 +235,7 @@ export function ExportForm({
           </DialogDescription>
         </DialogHeader>
         {note}
+        {secretsWarning}
         <Textarea
           readOnly
           value={json}
@@ -192,7 +250,10 @@ export function ExportForm({
             <KeyRoundIcon className="mr-2 h-4 w-4" />
             Use share code
           </Button>
-          <Button onClick={() => copy(json)} disabled={!bundledMessages}>
+          <Button
+            onClick={() => copy(json)}
+            disabled={!bundledMessages || hasUnconfirmedSecrets}
+          >
             <CopyIcon className="mr-2 h-4 w-4" />
             Copy JSON
           </Button>
@@ -211,6 +272,7 @@ export function ExportForm({
         </DialogDescription>
       </DialogHeader>
       {note}
+      {secretsWarning}
       <ShareCodePanel>
         <ShareCodeDisplay code={code} />
       </ShareCodePanel>
@@ -228,6 +290,7 @@ export function ExportForm({
           <LoadingButton
             onClick={generateCode}
             loading={createMutation.isPending || !bundledMessages}
+            disabled={hasUnconfirmedSecrets}
           >
             Generate code
           </LoadingButton>

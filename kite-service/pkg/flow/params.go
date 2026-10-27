@@ -19,13 +19,27 @@ var (
 
 	// Not after a dot, as webhook.data.params.count isn't a parameter.
 	paramReferenceRe = regexp.MustCompile(`(?:^|[^.\w])params\.([A-Za-z_][A-Za-z0-9_]*)`)
+
+	paramPlaceholderRe = regexp.MustCompile(`\{\{\s*params\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
 )
 
+// withParameters replaces every {{params.<key>}} in value with the value of
+// the parameter. It's for settings that aren't templates, like the value of an
+// event filter, so other placeholders are left as they are.
+func withParameters(value string, params map[string]string) string {
+	return paramPlaceholderRe.ReplaceAllStringFunc(value, func(m string) string {
+		return params[paramPlaceholderRe.FindStringSubmatch(m)[1]]
+	})
+}
+
 // ReferencedParameters returns the keys of the parameters the blocks use, in
-// the order they're first used.
+// the order they're first used. Notes only mention them.
 func (d FlowData) ReferencedParameters() []string {
 	templates := make([]string, 0, len(d.Nodes))
 	for _, node := range d.Nodes {
+		if node.Type == FlowNodeTypeNote {
+			continue
+		}
 		raw, err := json.Marshal(node.Data)
 		if err != nil {
 			continue
@@ -88,7 +102,7 @@ func (p FlowParameter) DisplayLabel() string {
 // CheckValue reports a value that doesn't fit the type of the parameter, like
 // a channel that isn't an ID. Empty values fit any type.
 func (p FlowParameter) CheckValue(value string) error {
-	if value == "" || (p.Type != FlowParameterTypeChannel && p.Type != FlowParameterTypeRole) {
+	if value == "" || !p.Type.Picked() {
 		return nil
 	}
 	if id, err := discord.ParseSnowflake(value); err != nil || !id.IsValid() {

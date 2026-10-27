@@ -61,7 +61,7 @@ func (s *memoryInstallStore) InstalledContentsByApp(ctx context.Context, appID s
 	return res, nil
 }
 
-func (s *memoryInstallStore) UpdateBundleInstall(ctx context.Context, install *model.BundleInstall, fromUpdatedAt time.Time, changes store.BundleInstallChanges) (*model.BundleInstall, error) {
+func (s *memoryInstallStore) UpdateBundleInstall(ctx context.Context, install *model.BundleInstall, fromUpdatedAt time.Time, changes store.BundleInstallChanges, userID string) (*model.BundleInstall, error) {
 	s.changes = &changes
 	return install, nil
 }
@@ -188,6 +188,7 @@ func moderationInstallOf(t *testing.T, b *bundle.Bundle, variables ...*model.Var
 		nil,
 		nil,
 		variablehandler.NewVariableHandler(variableStore, nil),
+		100,
 	)
 	return h, installs
 }
@@ -202,6 +203,7 @@ func call(t *testing.T, h handler.HandlerFunc, installID string, req any) (int, 
 
 	srv := handler.APIHandler(func(c *handler.Context) error {
 		c.App = &model.App{ID: "app"}
+		c.Session = &model.Session{UserID: "user"}
 		return h(c)
 	})
 

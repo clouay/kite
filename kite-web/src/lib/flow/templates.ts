@@ -1,12 +1,18 @@
 import {
+  AlarmClockIcon,
   ArrowUp10Icon,
+  BotOffIcon,
   BrainCircuitIcon,
   GavelIcon,
+  GiftIcon,
   InfoIcon,
   LightbulbIcon,
   LucideIcon,
   MailIcon,
+  MoonIcon,
   PackageIcon,
+  PinIcon,
+  ShieldAlertIcon,
   ShieldCheckIcon,
   SirenIcon,
   StarIcon,
@@ -17,18 +23,25 @@ import { FlowData } from "./dataSchema";
 import { MessageData } from "../types/message.gen";
 import { Bundle } from "../types/wire.gen";
 import { parameterKeyPattern, referencedParameters } from "./parameters";
+import userAvatar from "@/tools/common/utils/discordCdn";
 
-const templateIcons: Record<string, LucideIcon> = {
+export const templateIcons: Record<string, LucideIcon> = {
   gavel: GavelIcon,
   "brain-circuit": BrainCircuitIcon,
   "user-round-plus": UserRoundPlusIcon,
   mail: MailIcon,
   siren: SirenIcon,
   "shield-check": ShieldCheckIcon,
+  "shield-alert": ShieldAlertIcon,
   lightbulb: LightbulbIcon,
   info: InfoIcon,
   "arrow-up-1-0": ArrowUp10Icon,
   star: StarIcon,
+  moon: MoonIcon,
+  gift: GiftIcon,
+  pin: PinIcon,
+  "alarm-clock": AlarmClockIcon,
+  "bot-off": BotOffIcon,
 };
 
 export const templateCategories = [
@@ -37,6 +50,7 @@ export const templateCategories = [
   { value: "community", label: "Community" },
   { value: "support", label: "Support" },
   { value: "games", label: "Games" },
+  { value: "other", label: "Other" },
 ] as const;
 
 export type TemplateCategory = (typeof templateCategories)[number]["value"];
@@ -47,7 +61,7 @@ const flowSourceSchema = z.object({
       id: z.string(),
       type: z.string(),
       position: z.object({ x: z.number(), y: z.number() }),
-      data: z.record(z.unknown()),
+      data: z.record(z.string(), z.unknown()),
     })
   ),
   edges: z.array(
@@ -70,9 +84,22 @@ export const templateParameterSchema = z.object({
   // the value.
   type: z.enum(["text", "textarea", "channel", "role"]),
   required: z.boolean(),
+  // The value it starts with when the template is added. Only text
+  // parameters have one.
+  default: z.string().optional(),
 });
 
 export type TemplateParameter = z.infer<typeof templateParameterSchema>;
+
+// parameterDefaults are the values the parameters start with when the
+// template is added, by their key.
+export function parameterDefaults(
+  parameters: TemplateParameter[]
+): Record<string, string> {
+  return Object.fromEntries(
+    parameters.flatMap((p) => (p.default ? [[p.key, p.default]] : []))
+  );
+}
 
 // Parameters of exported flows can be without a description, unlike the ones
 // of the templates.
@@ -92,6 +119,16 @@ export const templateFileSchema = z.object({
   // Goes up whenever the flows change, so apps that added the template can
   // update to it.
   version: z.number().int().min(1),
+  // What changed in a version, which apps see when they update to it. A test
+  // checks every version after the first has one.
+  changelog: z
+    .array(
+      z.object({
+        version: z.number().int().min(2),
+        notes: z.string().min(1).max(1000),
+      })
+    )
+    .optional(),
   name: z.string().min(1),
   description: z.string().min(1),
   // Paragraphs on what the template does and what it needs, and questions
@@ -131,16 +168,25 @@ export const templateFileSchema = z.object({
   ),
   // Message templates, which blocks use by their id. A message with send_to
   // is posted in the channel of that parameter when the template is added.
+  // One with customize is written in the message editor when adding the
+  // template, starting with data. Its buttons and select menus can't run
+  // flows, the message editor there can't edit them.
   messages: z
     .array(
-      z.object({
-        id: itemIdSchema,
-        name: z.string().min(1).max(100),
-        description: z.string().max(255).nullable(),
-        data: z.record(z.unknown()),
-        flow_sources: z.record(flowSourceSchema),
-        send_to: z.string().regex(parameterKeyPattern).optional(),
-      })
+      z
+        .object({
+          id: itemIdSchema,
+          name: z.string().min(1).max(100),
+          description: z.string().max(255).nullable(),
+          data: z.record(z.string(), z.unknown()),
+          flow_sources: z.record(z.string(), flowSourceSchema),
+          send_to: z.string().regex(parameterKeyPattern).optional(),
+          customize: z.boolean().optional(),
+        })
+        .refine(
+          (m) => !m.customize || Object.keys(m.flow_sources).length === 0,
+          "A message with customize can't have flow_sources"
+        )
     )
     .optional(),
   // Stored variables, which blocks use by their id. They're created when the
@@ -166,7 +212,8 @@ export type TemplateFile = z.infer<typeof templateFileSchema>;
 const handleSchema = z
   .string()
   .nullish()
-  .transform((v) => v ?? undefined);
+  .transform((v) => v ?? undefined)
+  .optional();
 
 const bundleFlowSchema = z.object({
   parameters: z
@@ -181,7 +228,7 @@ const bundleFlowSchema = z.object({
       id: z.string(),
       type: z.string(),
       position: z.object({ x: z.number(), y: z.number() }),
-      data: z.record(z.unknown()),
+      data: z.record(z.string(), z.unknown()),
     })
   ),
   edges: z.array(
@@ -220,12 +267,13 @@ export const bundleContentSchema = z.object({
       id: z.string(),
       name: z.string(),
       description: z.string().nullable(),
-      data: z.record(z.unknown()),
-      flow_sources: z.record(bundleFlowSchema),
+      data: z.record(z.string(), z.unknown()),
+      flow_sources: z.record(z.string(), bundleFlowSchema),
       send_to: z
         .string()
-        .optional()
-        .transform((v) => v || undefined),
+        .transform((v) => v || undefined)
+        .optional(),
+      customize: z.boolean().optional(),
     })
   ),
   variables: z.array(
@@ -242,13 +290,27 @@ type TemplateSource = Omit<BundleContent, "messages" | "variables"> & {
   messages?: BundleContent["messages"];
   variables?: BundleContent["variables"];
   icon: string;
-  category: TemplateCategory;
+  category?: TemplateCategory;
   about: string[];
   faq: TemplateFile["faq"];
   setup?: string[];
   // Only the files have it, for the credit calculator of the pricing page.
   usage?: TemplateFile["usage"];
+  versionNotes?: Template["versionNotes"];
 };
+
+// TemplateAuthor is who made the template: Kite for official ones, a user for
+// bundles.
+export type TemplateAuthor =
+  | { kind: "kite" }
+  | { kind: "you" }
+  | {
+      kind: "user";
+      discordId: string;
+      name: string;
+      username: string;
+      avatarUrl: string;
+    };
 
 export type Template = {
   id: string;
@@ -256,7 +318,14 @@ export type Template = {
   name: string;
   description: string;
   icon: LucideIcon;
-  category: TemplateCategory;
+  // Bundles of users have no category.
+  category?: TemplateCategory;
+  author: TemplateAuthor;
+  // Whether it's in the marketplace, like official templates and the bundles
+  // of users a review approved.
+  listed: boolean;
+  // What changed in the last versions, newest first.
+  versionNotes: { version: number; notes: string }[];
   setup?: string[];
   about: string[];
   faq: TemplateFile["faq"];
@@ -285,35 +354,94 @@ export type Template = {
     parameterKeys: string[];
     // The key of the channel parameter the message is posted in.
     sendTo?: string;
+    // Whether it's written in the message editor when adding the template.
+    customize: boolean;
     data: MessageData;
     flowSources: Record<string, FlowData>;
   }[];
   variables: { key: string; name: string; scoped: boolean }[];
 };
 
-// templateFromBundle is the template of a published bundle of the service, or
-// undefined if it isn't one the site can show.
+// templatePath is the public page of a template or a listed bundle in the
+// marketplace.
+export function templatePath(id: string) {
+  return `/marketplace/${id}`;
+}
+
+// creatorPath is the page of a user's templates in the marketplace. The
+// Discord ID doesn't change like the username can.
+export function creatorPath(discordId: string) {
+  return `/marketplace/creators/${discordId}`;
+}
+
+// creatorBundles are the listed bundles of the user with the Discord ID.
+export function creatorBundles(bundles: Bundle[], discordId: string) {
+  return bundles.filter((b) => b.owner?.discord_id === discordId);
+}
+
+// templateFromBundle is the template of a bundle of the service, or undefined
+// if it isn't one the site can show. Official ones always have a listing, the
+// bundles of users once they're listed in the marketplace.
 export function templateFromBundle(bundle: Bundle): Template | undefined {
   const content = bundleContentSchema.safeParse(bundle.content);
+  if (!content.success) return undefined;
+  const versionNotes = bundle.version_notes ?? [];
   const category = templateCategories.find(
     (c) => c.value === bundle.listing?.category
   );
-  if (!bundle.listing || !content.success || !category) return undefined;
-  return loadTemplate({
-    ...content.data,
-    ...bundle.listing,
-    category: category.value,
-  });
+  const listing =
+    bundle.listing && category
+      ? { ...bundle.listing, category: category.value }
+      : undefined;
+
+  if (bundle.official) {
+    if (!listing) return undefined;
+    return loadTemplate(
+      { ...content.data, ...listing, versionNotes },
+      { kind: "kite" },
+      true
+    );
+  }
+  return loadTemplate(
+    {
+      ...content.data,
+      icon: "package",
+      about: [],
+      faq: [],
+      ...listing,
+      versionNotes,
+    },
+    bundle.yours || !bundle.owner
+      ? { kind: "you" }
+      : {
+          kind: "user",
+          discordId: bundle.owner.discord_id,
+          name: bundle.owner.display_name,
+          username: bundle.owner.discord_username,
+          avatarUrl: userAvatar({
+            id: bundle.owner.discord_id,
+            avatar: bundle.owner.discord_avatar,
+          }),
+        },
+    !!listing
+  );
 }
 
-export function loadTemplate(file: TemplateSource): Template {
+export function loadTemplate(
+  file: TemplateSource,
+  author: TemplateAuthor,
+  listed: boolean
+): Template {
   return {
+    listed,
     id: file.id,
     version: file.version,
     name: file.name,
     description: file.description,
     icon: templateIcons[file.icon] ?? PackageIcon,
     category: file.category,
+    author,
+    versionNotes: file.versionNotes ?? [],
     setup: file.setup,
     about: file.about,
     faq: file.faq,
@@ -353,6 +481,7 @@ export function loadTemplate(file: TemplateSource): Template {
           ])
         ),
         sendTo: message.send_to,
+        customize: message.customize ?? false,
         data: message.data as MessageData,
         flowSources: message.flow_sources as Record<string, FlowData>,
       };

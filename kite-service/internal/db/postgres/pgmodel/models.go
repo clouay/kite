@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ApiToken struct {
+	ID         string
+	UserID     string
+	Name       string
+	KeyHash    string
+	Scopes     []string
+	LastUsedAt pgtype.Timestamp
+	ExpiresAt  pgtype.Timestamp
+	CreatedAt  pgtype.Timestamp
+}
+
 type App struct {
 	ID                      string
 	Name                    string
@@ -82,13 +93,17 @@ type AssistantPrompt struct {
 }
 
 type Bundle struct {
-	ID          string
-	Name        string
-	Description string
-	OwnerUserID pgtype.Text
-	Version     int32
-	CreatedAt   pgtype.Timestamp
-	UpdatedAt   pgtype.Timestamp
+	ID              string
+	Name            string
+	Description     string
+	OwnerUserID     pgtype.Text
+	Version         int32
+	CreatedAt       pgtype.Timestamp
+	UpdatedAt       pgtype.Timestamp
+	SourceAppID     pgtype.Text
+	ApprovedVersion pgtype.Int4
+	RemovedAt       pgtype.Timestamp
+	RemovedReason   string
 }
 
 type BundleInstall struct {
@@ -117,11 +132,35 @@ type BundleListing struct {
 	UpdatedAt pgtype.Timestamp
 }
 
+type BundleReport struct {
+	ID             string
+	BundleID       string
+	ReporterUserID string
+	Category       string
+	Details        string
+	CreatedAt      pgtype.Timestamp
+	ResolvedAt     pgtype.Timestamp
+	ResolverUserID pgtype.Text
+}
+
+type BundleReview struct {
+	ID             string
+	BundleID       string
+	Version        int32
+	Listing        []byte
+	Status         string
+	Reason         string
+	ReviewerUserID pgtype.Text
+	CreatedAt      pgtype.Timestamp
+	DecidedAt      pgtype.Timestamp
+}
+
 type BundleVersion struct {
 	BundleID  string
 	Version   int32
 	Content   []byte
 	CreatedAt pgtype.Timestamp
+	Notes     string
 }
 
 type Collaborator struct {
@@ -181,6 +220,20 @@ type EventListener struct {
 	WebhookSecret   pgtype.Text
 }
 
+type ItemVersion struct {
+	ID            string
+	AppID         string
+	TargetType    string
+	TargetID      string
+	Source        string
+	CreatorUserID pgtype.Text
+	Content       []byte
+	TargetData    []byte
+	CreatedAt     pgtype.Timestamp
+	MergeKey      pgtype.Text
+	UpdatedAt     pgtype.Timestamp
+}
+
 type Log struct {
 	ID              int64
 	AppID           string
@@ -190,6 +243,10 @@ type Log struct {
 	CommandID       pgtype.Text
 	EventListenerID pgtype.Text
 	MessageID       pgtype.Text
+	NodeID          pgtype.Text
+	NodeType        pgtype.Text
+	ErrorCode       pgtype.Text
+	Details         []byte
 }
 
 type Message struct {

@@ -26,14 +26,11 @@ type APIServerConfig struct {
 	APIPublicBaseURL    string
 	DiscordClientID     string
 	DiscordClientSecret string
-	UserLimits          APIUserLimitsConfig
+	UserLimits          config.UserLimitsConfig
 	Billing             BillingConfig
 	AssistantMaxRepairs int
-}
-
-type APIUserLimitsConfig struct {
-	MaxAppsPerUser int
-	MaxAssetSize   int
+	// AdminUserIDs are the users who can review bundles for the marketplace.
+	AdminUserIDs []string
 }
 
 type BillingConfig struct {
@@ -81,6 +78,8 @@ func NewAPIServer(
 	statsStore store.StatsStore,
 	bundleInstallStore store.BundleInstallStore,
 	bundleStore store.BundleStore,
+	itemVersionStore store.ItemVersionStore,
+	apiTokenStore store.APITokenStore,
 ) *APIServer {
 	s := &APIServer{
 		config: config,
@@ -116,6 +115,8 @@ func NewAPIServer(
 		statsStore,
 		bundleInstallStore,
 		bundleStore,
+		itemVersionStore,
+		apiTokenStore,
 	)
 	return s
 }

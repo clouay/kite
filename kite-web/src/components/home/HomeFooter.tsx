@@ -120,7 +120,7 @@ export default function HomeFooter() {
             </Link>
           </div>
           <div>
-            <Link href="/templates" className="opacity-60 hover:opacity-100">
+            <Link href="/marketplace" className="opacity-60 hover:opacity-100">
               Bot Templates
             </Link>
           </div>
@@ -143,6 +143,12 @@ export default function HomeFooter() {
           <div>
             <Link href="/refund" className="opacity-60 hover:opacity-100">
               Refund Policy
+            </Link>
+          </div>
+
+          <div>
+            <Link href="/imprint" className="opacity-60 hover:opacity-100">
+              Legal Notice
             </Link>
           </div>
         </div>

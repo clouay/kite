@@ -7,8 +7,9 @@ import { useUnsavedChangesWarning } from "@/lib/hooks/exit";
 import { useAppId, useCommandId } from "@/lib/hooks/params";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { isNoteNode } from "@/lib/flow/notes";
 
 export default function AppCommandPage() {
   const router = useRouter();
@@ -26,43 +27,54 @@ export default function AppCommandPage() {
     }
   });
 
-  const updateMutation = useCommandUpdateMutation(useAppId(), useCommandId());
+  const appId = useAppId();
+  const cmdId = useCommandId();
+  const updateMutation = useCommandUpdateMutation(appId, cmdId);
+  const { mutateAsync: updateCommand } = updateMutation;
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Counts edits, so edits made while a save is running stay unsaved.
+  const changeCount = useRef(0);
 
   const onChange = useCallback(() => {
+    changeCount.current++;
     setHasUnsavedChanges(true);
   }, [setHasUnsavedChanges]);
 
   const save = useCallback(
-    (data: FlowData, options?: { onSuccess?: () => void }) => {
-      updateMutation.mutate(
-        {
+    async (data: FlowData, editorSession?: string) => {
+      const savedChangeCount = changeCount.current;
+
+      try {
+        const res = await updateCommand({
           flow_source: data,
-        },
-        {
-          onSuccess(res) {
-            if (res.success) {
-              track("command_saved", { blocks: data.nodes.length });
-              toast.success("Command saved!");
-              options?.onSuccess?.();
-            } else {
-              track("flow_save_failed", {
-                kind: "command",
-                code: res.error.code,
-              });
-              toast.error(
-                `Failed to update command: ${res.error.message} (${res.error.code})`
-              );
-            }
-          },
-          onSettled() {
-            setHasUnsavedChanges(false);
-          },
+          editor_session: editorSession,
+        });
+        if (!res.success) {
+          track("flow_save_failed", {
+            kind: "command",
+            code: res.error.code,
+          });
+          toast.error(
+            `Failed to update command: ${res.error.message} (${res.error.code})`
+          );
+          return false;
         }
-      );
+
+        track("command_saved", {
+          blocks: data.nodes.filter((n) => !isNoteNode(n)).length,
+        });
+        toast.success("Command saved!");
+        if (changeCount.current === savedChangeCount) {
+          setHasUnsavedChanges(false);
+        }
+        return true;
+      } catch (err) {
+        toast.error(`Failed to update command: ${err}`);
+        return false;
+      }
     },
-    [setHasUnsavedChanges, updateMutation]
+    [setHasUnsavedChanges, updateCommand]
   );
 
   const leave = useUnsavedChangesWarning(hasUnsavedChanges);
@@ -74,7 +86,11 @@ export default function AppCommandPage() {
     });
   }, [leave, router]);
 
-  const logs = useFlowLogEntries({ commandId: useCommandId() });
+  const logs = useFlowLogEntries({ commandId: cmdId });
+  const versionTarget = useMemo(
+    () => ({ appId, type: "command" as const, id: cmdId }),
+    [appId, cmdId]
+  );
 
   return (
     <div className="flex min-h-[100dvh] w-full flex-col">
@@ -88,11 +104,13 @@ export default function AppCommandPage() {
           viewportKey={`command:${cmd.id}`}
           hasUnsavedChanges={hasUnsavedChanges}
           command={cmd}
+          bundleInstallId={cmd.bundle_install_id}
           onChange={onChange}
           isSaving={updateMutation.isPending}
           onSave={save}
           onExit={exit}
           logs={logs}
+          versionTarget={versionTarget}
         />
       )}
     </div>

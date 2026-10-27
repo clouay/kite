@@ -16,9 +16,14 @@ export default function FlowPlaceholderExplorer({
   onSelect,
   hideBrackets,
   field,
+  onlyParameters,
 }: {
   onSelect: (value: string) => void;
   hideBrackets?: boolean;
+  // For settings that aren't templates, like the value of an event filter.
+  onlyParameters?: boolean;
+  // The setting it inserts into, like http_request_data.url. The app's
+  // secrets are only offered for settings that can use them.
   field?: string;
 }) {
   const [addValueOpen, setAddValueOpen] = useState(false);
@@ -46,25 +51,29 @@ export default function FlowPlaceholderExplorer({
   const parameters = useSyncedParameters();
 
   const placeholders = useMemo(() => {
-    let res = getAvailablePlaceholders(
-      selected?.id,
-      nodes,
-      edges,
-      contextType,
-      isResponseTarget
-    );
-    if (parameters.length) {
-      res = [
-        ...res,
-        {
-          label: "Parameters",
-          placeholders: parameters.map((p) => ({
-            label: p.label || p.key,
-            value: `params.${p.key}`,
-          })),
-        },
-      ];
-    }
+    const parameterGroup = parameters.length
+      ? [
+          {
+            label: "Parameters",
+            placeholders: parameters.map((p) => ({
+              label: p.label || p.key,
+              value: `params.${p.key}`,
+            })),
+          },
+        ]
+      : [];
+    if (onlyParameters) return parameterGroup;
+
+    const res = [
+      ...getAvailablePlaceholders(
+        selected?.id,
+        nodes,
+        edges,
+        contextType,
+        isResponseTarget
+      ),
+      ...parameterGroup,
+    ];
 
     const byName = new Map<string, AppSecret>();
     for (const s of secrets ?? []) {
@@ -119,7 +128,10 @@ export default function FlowPlaceholderExplorer({
     parameters,
     commandId,
     eventListenerId,
+    onlyParameters,
   ]);
+
+  if (onlyParameters && !placeholders.length) return null;
 
   return (
     <div className="absolute top-1.5 right-1.5 z-20">

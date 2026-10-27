@@ -131,6 +131,7 @@ func StartServer(c context.Context, cfg *config.Config) error {
 			PluginInstanceStore:  pg,
 			PluginValueStore:     pg,
 			PluginRegistry:       pluginRegistry,
+			VariableStore:        pg,
 			VariableValueStore:   pg,
 			AppSecretStore:       pg,
 			AppIntegrationStore:  pg,
@@ -159,7 +160,7 @@ func StartServer(c context.Context, cfg *config.Config) error {
 	gateway.Run(ctx)
 	engine.RunScheduler(ctx, gateway)
 
-	usage := usage.NewUsageManager(pg, pg, pg, pg, pg, pg, planManager)
+	usage := usage.NewUsageManager(pg, pg, pg, pg, pg, pg, pg, assetStore, planManager)
 
 	if cfg.IsPrimaryCluster() {
 		planManager.Run(ctx)
@@ -183,10 +184,9 @@ func StartServer(c context.Context, cfg *config.Config) error {
 		AppPublicBaseURL:    cfg.App.PublicBaseURL,
 		DiscordClientID:     cfg.Discord.ClientID,
 		DiscordClientSecret: cfg.Discord.ClientSecret,
-		UserLimits: api.APIUserLimitsConfig{
-			MaxAppsPerUser: cfg.UserLimits.MaxAppsPerUser,
-		},
+		UserLimits:          cfg.UserLimits,
 		AssistantMaxRepairs: cfg.Assistant.MaxRepairs,
+		AdminUserIDs:        cfg.App.AdminUserIDs,
 		Billing: api.BillingConfig{
 			LemonSqueezyAPIKey:        cfg.Billing.LemonSqueezyAPIKey,
 			LemonSqueezySigningSecret: cfg.Billing.LemonSqueezySigningSecret,
@@ -197,7 +197,7 @@ func StartServer(c context.Context, cfg *config.Config) error {
 	},
 		pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg,
 		assetStore, gateway, engine.WebhookRunner(gateway), planManager, pluginRegistry, tokenCrypt, commandManager,
-		pg, flowAssistant, pg, pg, pg, pg, pg,
+		pg, flowAssistant, pg, pg, pg, pg, pg, pg, pg,
 	)
 	address := fmt.Sprintf("%s:%d", cfg.API.Host, cfg.API.Port)
 	if err := apiServer.Serve(ctx, address); err != nil {

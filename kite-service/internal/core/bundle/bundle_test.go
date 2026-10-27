@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kitecloud/kite/kite-service/pkg/flow"
+	"github.com/kitecloud/kite/kite-service/pkg/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,4 +137,42 @@ func TestSelectOptionalParameter(t *testing.T) {
 	require.Len(t, params, 1)
 	assert.Equal(t, "system_prompt", params[0].Key)
 	assert.Equal(t, "", params[0].Value)
+}
+
+// The changelog of official templates goes with them into the store.
+func TestOfficialChangelog(t *testing.T) {
+	for _, o := range official {
+		for _, n := range o.changelog {
+			assert.NotEmpty(t, n.Notes, o.bundle.ID)
+			assert.LessOrEqual(t, n.Version, o.bundle.Version, o.bundle.ID)
+		}
+		if o.bundle.ID == "verification" {
+			require.Len(t, o.changelog, 1)
+			assert.Equal(t, 2, o.changelog[0].Version)
+		}
+	}
+}
+
+// Only selected messages that allow it can be changed while adding a bundle,
+// and they remember the data of the bundle.
+func TestSelectionCustomize(t *testing.T) {
+	b := &Bundle{Messages: []Message{
+		{ID: "sticky", Name: "Sticky", Data: json.RawMessage(`{"content":"Default"}`), Customize: true},
+		{ID: "panel", Name: "Panel", Data: json.RawMessage(`{"content":"Panel"}`)},
+		{ID: "other", Name: "Other", Data: json.RawMessage(`{}`), Customize: true},
+	}}
+	custom := message.MessageData{Content: "Mine"}
+
+	sel, err := b.Select([]string{"sticky", "panel"}, map[string]string{})
+	require.NoError(t, err)
+	require.NoError(t, sel.Customize(map[string]message.MessageData{"sticky": custom}))
+	assert.Equal(t, custom, sel.Messages[0].Data)
+	assert.Equal(t, &message.MessageData{Content: "Default"}, sel.Messages[0].Default)
+	assert.Nil(t, sel.Messages[1].Default)
+
+	for _, key := range []string{"panel", "other", "nope"} {
+		sel, err := b.Select([]string{"sticky", "panel"}, map[string]string{})
+		require.NoError(t, err)
+		assert.ErrorContains(t, sel.Customize(map[string]message.MessageData{key: custom}), "the message "+key+" can't be changed")
+	}
 }

@@ -30,9 +30,11 @@ type Tab =
 export default function FlowMenu({
   selectedNodeId,
   logs,
+  onShowNode,
 }: {
   selectedNodeId: string | null;
   logs?: LogEntry[];
+  onShowNode: (id: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("action");
 
@@ -111,7 +113,7 @@ export default function FlowMenu({
 
         {tab === "secrets" && <FlowSecretList />}
 
-        {tab === "logs" && <FlowLogList logs={logs} />}
+        {tab === "logs" && <FlowLogList logs={logs} onShowNode={onShowNode} />}
 
         {selectedNodeId && <FlowNodeEditor nodeId={selectedNodeId} />}
       </div>

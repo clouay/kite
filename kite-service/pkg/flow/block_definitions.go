@@ -60,7 +60,8 @@ type blockRequest struct {
 }
 
 type blockDefinition struct {
-	Type FlowNodeType `json:"type"`
+	Type  FlowNodeType `json:"type"`
+	Title string       `json:"title"`
 	// Nil for blocks whose cost depends on their settings, see CreditsCost.
 	Credits        *int `json:"credits"`
 	AuditLogReason bool `json:"audit_log_reason"`
@@ -261,7 +262,7 @@ var listSeparatorRe = regexp.MustCompile(`[,\s]+`)
 func (n *CompiledFlowNode) executeBlockDefinition(ctx *FlowContext, block blockDefinition) error {
 	integration, ok := integrations[block.Run.Integration]
 	if block.Run.Kind != "request" || !ok {
-		return traceError(n, fmt.Errorf("unsupported block run: %s %s", block.Run.Kind, block.Run.Integration))
+		return fmt.Errorf("unsupported block run: %s %s", block.Run.Kind, block.Run.Integration)
 	}
 
 	pathParams := make(map[string]string)
@@ -271,11 +272,14 @@ func (n *CompiledFlowNode) executeBlockDefinition(ctx *FlowContext, block blockD
 
 	for _, field := range block.Fields {
 		hasBody = hasBody || field.In == "body"
+		settingErr := func(err error) error {
+			return &settingError{Field: field.Name, Err: err}
+		}
 
 		raw := n.Data.Setting(field.Name)
 		value, err := ctx.evalFieldValue(raw)
 		if err != nil {
-			return traceError(n, err)
+			return settingErr(err)
 		}
 		// Only a setting that's left empty falls back, not a placeholder
 		// that turns out empty, which could point e.g. a ban at the wrong
@@ -285,21 +289,21 @@ func (n *CompiledFlowNode) executeBlockDefinition(ctx *FlowContext, block blockD
 		}
 		if isEmptyFieldValue(value) {
 			if field.Required || field.In == "path" {
-				return traceError(n, fmt.Errorf("%s is required", field.Name))
+				return settingErr(fmt.Errorf("%s is required", field.Name))
 			}
 			continue
 		}
 
 		v, err := field.value(value)
 		if err != nil {
-			return traceError(n, fmt.Errorf("invalid value for %s: %w", field.Name, err))
+			return settingErr(fmt.Errorf("invalid value for %s: %w", field.Name, err))
 		}
 
 		switch field.In {
 		case "path":
 			pathParams[field.Target], err = apiPathSegment(field.Name, fmt.Sprint(v))
 			if err != nil {
-				return traceError(n, err)
+				return settingErr(err)
 			}
 		case "query":
 			if list, ok := v.([]string); ok {
@@ -326,7 +330,7 @@ func (n *CompiledFlowNode) executeBlockDefinition(ctx *FlowContext, block blockD
 		var err error
 		reqBody, err = json.Marshal(body)
 		if err != nil {
-			return traceError(n, err)
+			return err
 		}
 	}
 
@@ -334,7 +338,7 @@ func (n *CompiledFlowNode) executeBlockDefinition(ctx *FlowContext, block blockD
 	if block.AuditLogReason {
 		auditLogReason, err := ctx.EvalTemplate(n.Data.AuditLogReason)
 		if err != nil {
-			return traceError(n, err)
+			return err
 		}
 		reason = api.AuditLogReason(auditLogReason.String())
 	}
@@ -352,13 +356,13 @@ func (n *CompiledFlowNode) executeBlockDefinition(ctx *FlowContext, block blockD
 		resBody, err = integrationRequest(ctx, integration, block.Run.Method, path, reqBody)
 	}
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	if block.Result != nil {
 		result, err := blockResult(block, resBody)
 		if err != nil {
-			return traceError(n, err)
+			return err
 		}
 		ctx.StoreNodeResult(n, result)
 	}
@@ -601,7 +605,11 @@ func integrationRequest(ctx *FlowContext, integration Integration, method string
 		if len(msg) > 300 {
 			msg = msg[:300]
 		}
-		return nil, fmt.Errorf("%s returned %s: %s", integration.Name, resp.Status, string(msg))
+		return nil, &integrationError{
+			Integration: integration.ID,
+			Status:      resp.StatusCode,
+			Err:         fmt.Errorf("%s returned %s: %s", integration.Name, resp.Status, string(msg)),
+		}
 	}
 	return data, nil
 }

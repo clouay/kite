@@ -1,12 +1,7 @@
 import { FlowContextStoreProvider, FlowContextType } from "@/lib/flow/context";
 import { FlowData, NodeData } from "@/lib/flow/dataSchema";
-import {
-  Node,
-  OnSelectionChangeParams,
-  useReactFlow,
-  useStoreApi,
-} from "@xyflow/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Node, OnSelectionChangeParams, useStoreApi } from "@xyflow/react";
+import { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import FlowEditor, { FlowEditorApi } from "./FlowEditor";
 import FlowMenu from "./FlowMenu";
 import { Command, EventListener, LogEntry } from "@/lib/types/wire.gen";
@@ -19,8 +14,10 @@ import FlowAddBlockDrawer from "./FlowAddBlockDrawer";
 import FlowNodeEditorDrawer from "./FlowNodeEditorDrawer";
 import FlowLogsDrawer from "./FlowLogsDrawer";
 import FlowSecretsDrawer from "./FlowSecretsDrawer";
+import FlowParametersDrawer from "./FlowParametersDrawer";
 import { useIsMobile } from "@/lib/hooks/use-mobile";
 import { useFlowParametersStore } from "@/lib/flow/parametersStore";
+import { isNoteNode } from "@/lib/flow/notes";
 
 interface Props {
   flowData: FlowData;
@@ -34,6 +31,8 @@ interface Props {
   // header. Otherwise the editor shows its own button for it.
   chatOpen?: boolean;
   onChatOpenChange?: (open: boolean) => void;
+  // Lets the page edit the flow, e.g. to restore a save.
+  editorRef?: RefObject<FlowEditorApi | null>;
   // Goes up when the flow is saved, which keeps the AI's changes.
   saveCount?: number;
 }
@@ -48,6 +47,7 @@ export default function Flow({
   onChange,
   chatOpen: controlledChatOpen,
   onChatOpenChange,
+  editorRef: outerEditorRef,
   saveCount,
 }: Props) {
   const isMobile = useIsMobile();
@@ -56,11 +56,13 @@ export default function Flow({
   const [addBlockOpen, setAddBlockOpen] = useState(false);
   const [secretsOpen, setSecretsOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [parametersOpen, setParametersOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<FlowEditorApi>(null);
+  const ownEditorRef = useRef<FlowEditorApi>(null);
+  const editorRef = outerEditorRef ?? ownEditorRef;
   const [ownChatOpen, setOwnChatOpen] = useState(false);
   const chatOpen = controlledChatOpen ?? ownChatOpen;
   const setChatOpen = onChatOpenChange ?? setOwnChatOpen;
@@ -69,7 +71,9 @@ export default function Flow({
   if (chatOpen && !chatMounted) setChatMounted(true);
   const closeChat = useCallback(() => setChatOpen(false), [setChatOpen]);
 
-  const { fitView } = useReactFlow();
+  useEffect(() => {
+    if (chatOpen) track("flow_ai_opened", { context });
+  }, [chatOpen, context]);
   const store = useStoreApi();
 
   // Changing a parameter is a change of the flow like changing a block.
@@ -81,7 +85,7 @@ export default function Flow({
 
   const onSelectionChange = useCallback(
     ({ nodes }: OnSelectionChangeParams) => {
-      if (nodes.length === 1) {
+      if (nodes.length === 1 && !isNoteNode(nodes[0])) {
         setSelectedNodeId(nodes[0].id);
       } else {
         setSelectedNodeId(null);
@@ -93,6 +97,8 @@ export default function Flow({
 
   const handleNodeTap = useCallback(
     (node: Node<NodeData>) => {
+      // Notes are edited on the canvas, they have no settings.
+      if (isNoteNode(node)) return;
       setSelectedNodeId(node.id);
       if (isMobile) {
         setMobileEditorOpen(true);
@@ -113,20 +119,33 @@ export default function Flow({
   }, [store]);
 
   const handleFitView = useCallback(() => {
-    fitView({ padding: 0.2, duration: 250 });
-  }, [fitView]);
+    editorRef.current?.fitView();
+  }, [editorRef]);
 
   const handleUndo = useCallback(() => {
     editorRef.current?.undo();
-  }, []);
+  }, [editorRef]);
 
   const handleRedo = useCallback(() => {
     editorRef.current?.redo();
-  }, []);
+  }, [editorRef]);
 
   const handleFormat = useCallback(() => {
     editorRef.current?.format();
-  }, []);
+  }, [editorRef]);
+
+  const handleAddNote = useCallback(() => {
+    editorRef.current?.addNote();
+  }, [editorRef]);
+
+  const showNode = useCallback(
+    (id: string) => {
+      store.getState().addSelectedNodes([id]);
+      editorRef.current?.showNodes([id]);
+      setLogsOpen(false);
+    },
+    [store, editorRef]
+  );
 
   return (
     <FlowContextStoreProvider
@@ -147,7 +166,11 @@ export default function Flow({
         ref={containerRef}
         className="flex flex-auto overflow-y-hidden relative"
       >
-        <FlowMenu selectedNodeId={selectedNodeId} logs={logs} />
+        <FlowMenu
+          selectedNodeId={selectedNodeId}
+          logs={logs}
+          onShowNode={showNode}
+        />
 
         <div className="flex-auto relative pb-14 md:pb-0">
           <FlowEditor
@@ -190,16 +213,20 @@ export default function Flow({
 
         <FlowMobileBottomBar
           selectedNodeId={selectedNodeId}
-          hidden={mobileEditorOpen || addBlockOpen || secretsOpen || logsOpen}
+          hidden={
+            mobileEditorOpen || addBlockOpen || secretsOpen || logsOpen || parametersOpen
+          }
           onAddBlock={() => setAddBlockOpen(true)}
           onEditNode={() => setMobileEditorOpen(true)}
           onDeselectNode={deselectNode}
           onOpenSecrets={() => setSecretsOpen(true)}
           onOpenLogs={() => setLogsOpen(true)}
+          onOpenParameters={() => setParametersOpen(true)}
           onFitView={handleFitView}
           onUndo={handleUndo}
           onRedo={handleRedo}
           onFormat={handleFormat}
+          onAddNote={handleAddNote}
           canUndo={canUndo}
           canRedo={canRedo}
           logCount={logs?.length}
@@ -225,6 +252,12 @@ export default function Flow({
           logs={logs}
           open={logsOpen}
           onOpenChange={setLogsOpen}
+          onShowNode={showNode}
+        />
+
+        <FlowParametersDrawer
+          open={parametersOpen}
+          onOpenChange={setParametersOpen}
         />
       </div>
     </FlowContextStoreProvider>

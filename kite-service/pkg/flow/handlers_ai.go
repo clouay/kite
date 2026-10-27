@@ -35,6 +35,11 @@ const aiDecisionMaxInputLength = 8000
 
 const aiScoreMaxLevels = 10
 
+// aiChatMaxInputLength bounds the bytes of the prompt and system prompt
+// together, after placeholders are filled in. The blocks cost the same
+// credits however long the prompt is, so it bounds what a run can cost Kite.
+const aiChatMaxInputLength = 8000
+
 func executeActionAIChatCompletion(n *CompiledFlowNode, ctx *FlowContext) error {
 	webSearch := n.Type == FlowNodeTypeActionAISearchWeb
 
@@ -64,17 +69,24 @@ func executeActionAIChatCompletion(n *CompiledFlowNode, ctx *FlowContext) error 
 
 	systemPrompt, err := ctx.EvalTemplate(data.SystemPrompt)
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	prompt, err := ctx.EvalTemplate(data.Prompt)
 	if err != nil {
-		return traceError(n, err)
+		return err
+	}
+
+	if length := len(prompt.String()) + len(systemPrompt.String()); length > aiChatMaxInputLength {
+		return fmt.Errorf(
+			"prompt and system prompt are %d bytes, more than the limit of %d",
+			length, aiChatMaxInputLength,
+		)
 	}
 
 	maxCompletionTokens, err := ctx.EvalTemplate(data.MaxCompletionTokens)
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	maxOutputTokens := aiMaxOutputTokens
@@ -96,7 +108,7 @@ func executeActionAIChatCompletion(n *CompiledFlowNode, ctx *FlowContext) error 
 
 	response, err := ctx.AI.CreateResponse(ctx, opts)
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	ctx.StoreNodeResult(n, thing.NewString(response))
@@ -189,22 +201,22 @@ func executeControlConditionAIChoice(n *CompiledFlowNode, ctx *FlowContext) erro
 		case FlowNodeTypeControlConditionItemAIChoice:
 			name := strings.TrimSpace(child.Data.AIChoiceName)
 			if name == "" {
-				return traceError(n, errors.New("every option needs a name"))
+				return errors.New("every option needs a name")
 			}
 			if _, ok := items[name]; ok {
-				return traceError(n, fmt.Errorf("option %q exists twice", name))
+				return fmt.Errorf("option %q exists twice", name)
 			}
 			options[name] = child.Data.AIChoiceDescription
 			items[name] = child
 		}
 	}
 	if len(items) == 0 {
-		return traceError(n, errors.New("add at least one option"))
+		return errors.New("add at least one option")
 	}
 
 	minConfidence, err := evalProbability(ctx, "min confidence", data.MinConfidence, 0)
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	decision, err := decide(ctx, data, provider.DecideOpts{
@@ -212,7 +224,7 @@ func executeControlConditionAIChoice(n *CompiledFlowNode, ctx *FlowContext) erro
 		Options: options,
 	})
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	picked, ok := items[decision.Choice]
@@ -235,7 +247,7 @@ func executeControlConditionAIChoice(n *CompiledFlowNode, ctx *FlowContext) erro
 	}
 	if next != nil {
 		if err := next.ExecuteConditionItem(ctx); err != nil {
-			return traceError(n, err)
+			return err
 		}
 	}
 	return nil
@@ -265,14 +277,14 @@ func executeControlAICheck(n *CompiledFlowNode, ctx *FlowContext) error {
 
 	yesThreshold, err := evalProbability(ctx, "yes threshold", yesTemplate, 0.5)
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 	noThreshold, err := evalProbability(ctx, "no threshold", noTemplate, 0.5)
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 	if noThreshold > yesThreshold {
-		return traceError(n, errors.New("no threshold can't be above yes threshold"))
+		return errors.New("no threshold can't be above yes threshold")
 	}
 
 	decision, err := decide(ctx, data, provider.DecideOpts{
@@ -280,7 +292,7 @@ func executeControlAICheck(n *CompiledFlowNode, ctx *FlowContext) error {
 		Options: map[string]string{"true": "Yes", "false": "No"},
 	})
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	ctx.StoreNodeResult(n, thing.NewFloat(decision.Noul))
@@ -302,11 +314,11 @@ func executeActionAIScore(n *CompiledFlowNode, ctx *FlowContext) error {
 	}
 
 	if len(data.Levels) < 2 || len(data.Levels) > aiScoreMaxLevels {
-		return traceError(n, fmt.Errorf("needs 2 to %d levels, has %d", aiScoreMaxLevels, len(data.Levels)))
+		return fmt.Errorf("needs 2 to %d levels, has %d", aiScoreMaxLevels, len(data.Levels))
 	}
 	for _, level := range data.Levels {
 		if strings.TrimSpace(level) == "" {
-			return traceError(n, errors.New("every level needs a description"))
+			return errors.New("every level needs a description")
 		}
 	}
 
@@ -315,7 +327,7 @@ func executeActionAIScore(n *CompiledFlowNode, ctx *FlowContext) error {
 		Levels: data.Levels,
 	})
 	if err != nil {
-		return traceError(n, err)
+		return err
 	}
 
 	// The model counts levels from 0, users from 1.

@@ -1,11 +1,5 @@
-import {
-  keepPreviousData,
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "./client";
-import { APIResponse } from "./response";
 import {
   AppCollaboratorInviteListResponse,
   AppCollaboratorListResponse,
@@ -18,6 +12,9 @@ import {
   BillingPlanListResponse,
   CommandGetResponse,
   CommandListResponse,
+  OpenBundleReportListResponse,
+  PendingBundleReviewGetResponse,
+  PendingBundleReviewListResponse,
   EventListenerGetResponse,
   EventListenerListResponse,
   FeaturesGetResponse,
@@ -29,6 +26,7 @@ import {
   BundleGetResponse,
   BundleInstallListResponse,
   BundleListResponse,
+  UserBundleListResponse,
   MessageInstanceListResponse,
   MessageListResponse,
   PluginInstanceGetResponse,
@@ -50,7 +48,10 @@ import {
   VariableValueListResponse,
   AppSecretListResponse,
   AppIntegrationListResponse,
+  ItemVersionGetResponse,
+  ItemVersionListResponse,
   StatsGetResponse,
+  APITokenListResponse,
 } from "../types/wire.gen";
 
 export function useUserQuery(userId = "@me") {
@@ -61,10 +62,11 @@ export function useUserQuery(userId = "@me") {
   });
 }
 
-export function useStatsQuery() {
+export function useStatsQuery(enabled = true) {
   return useQuery({
     queryKey: ["stats"],
     queryFn: () => apiRequest<StatsGetResponse>(`/v1/stats`),
+    enabled,
     // The API only updates them once an hour.
     staleTime: 60 * 60 * 1000,
   });
@@ -206,33 +208,83 @@ export function useCommandQuery(appId: string, cmdId: string) {
   });
 }
 
-// Bundles only change when Kite is deployed.
+// The marketplace, with only what the cards show. The official bundles only
+// change when Kite is deployed, the listed ones of users when a review
+// approves them.
 export function useBundlesQuery() {
   return useQuery({
     queryKey: ["bundles"],
     queryFn: () => apiRequest<BundleListResponse>(`/v1/bundles`),
-    staleTime: Infinity,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useBundleQuery(bundleId: string) {
-  const client = useQueryClient();
+// usePendingBundleReviewsQuery are the bundles waiting for a review, without
+// their content, which only admins can see.
+export function usePendingBundleReviewsQuery() {
+  return useQuery({
+    queryKey: ["admin", "bundle-reviews"],
+    queryFn: () =>
+      apiRequest<PendingBundleReviewListResponse>(`/v1/admin/bundle-reviews`),
+  });
+}
 
+// usePendingBundleReviewQuery is a review waiting for a decision with the
+// content of the version it reviews.
+export function usePendingBundleReviewQuery(reviewId: string) {
+  return useQuery({
+    queryKey: ["admin", "bundle-reviews", reviewId],
+    queryFn: () =>
+      apiRequest<PendingBundleReviewGetResponse>(
+        `/v1/admin/bundle-reviews/${reviewId}`
+      ),
+    enabled: !!reviewId,
+  });
+}
+
+// useOpenBundleReportsQuery are the reports of bundles waiting for a decision,
+// which only admins can see.
+export function useOpenBundleReportsQuery() {
+  return useQuery({
+    queryKey: ["admin", "bundle-reports"],
+    queryFn: () =>
+      apiRequest<OpenBundleReportListResponse>(`/v1/admin/bundle-reports`),
+  });
+}
+
+// useUserBundlesQuery are the bundles the user made, from all of their apps.
+export function useUserBundlesQuery() {
+  return useQuery({
+    queryKey: ["users", "@me", "bundles"],
+    queryFn: () => apiRequest<UserBundleListResponse>(`/v1/users/@me/bundles`),
+  });
+}
+
+// useAPITokensQuery are the user's API tokens, without the tokens themselves.
+export function useAPITokensQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ["users", "@me", "api-tokens"],
+    queryFn: () => apiRequest<APITokenListResponse>(`/v1/users/@me/api-tokens`),
+    enabled,
+  });
+}
+
+// The placeholder is shown until the bundle loads, like the one the page was
+// rendered with on the server.
+export function useBundleQuery(
+  bundleId: string,
+  placeholder?: BundleGetResponse | null
+) {
+  // The list only has what the cards show, so the bundle is always loaded.
   return useQuery({
     queryKey: ["bundles", bundleId],
     queryFn: () => apiRequest<BundleGetResponse>(`/v1/bundles/${bundleId}`),
     enabled: !!bundleId,
-    staleTime: Infinity,
-    // Coming from the list, the bundle is already there.
-    initialData: () => {
-      const list = client.getQueryData<APIResponse<BundleListResponse>>([
-        "bundles",
-      ]);
-      const bundle = list?.success
-        ? list.data.find((b) => b?.id === bundleId)
-        : undefined;
-      return bundle ? { success: true as const, data: bundle } : undefined;
-    },
+    // Users' bundles get new versions or are deleted at any time.
+    staleTime: 60_000,
+    placeholderData: placeholder
+      ? { success: true as const, data: placeholder }
+      : undefined,
   });
 }
 
@@ -267,6 +319,52 @@ export function useEventListenerQuery(appId: string, eventId: string) {
       ),
     enabled: !!appId && !!eventId,
   });
+}
+
+// The command, event listener or message whose version history is shown.
+export interface ItemVersionTarget {
+  appId: string;
+  type: "command" | "event_listener" | "message";
+  id: string;
+}
+
+const itemVersionPathSegments = {
+  command: "commands",
+  event_listener: "event-listeners",
+  message: "messages",
+};
+
+function itemVersionsPath(target: ItemVersionTarget) {
+  return `/v1/apps/${target.appId}/${itemVersionPathSegments[target.type]}/${
+    target.id
+  }/versions`;
+}
+
+// Under the key of the item, so saving it refreshes the versions too.
+export function useItemVersionsQuery(
+  target: ItemVersionTarget,
+  enabled: boolean
+) {
+  return useQuery({
+    queryKey: [
+      "apps",
+      target.appId,
+      itemVersionPathSegments[target.type],
+      target.id,
+      "versions",
+    ],
+    queryFn: () =>
+      apiRequest<ItemVersionListResponse>(itemVersionsPath(target)),
+    enabled: enabled && !!target.appId,
+    // Every save adds a version, so the list is always refetched.
+    staleTime: 0,
+  });
+}
+
+export function getItemVersion(target: ItemVersionTarget, versionId: string) {
+  return apiRequest<ItemVersionGetResponse>(
+    `${itemVersionsPath(target)}/${versionId}`
+  );
 }
 
 export function useVariablesQuery(appId: string) {
@@ -502,10 +600,11 @@ export function useAppSubscriptionsQuery(appId: string) {
   });
 }
 
-export function useBillingPlansQuery() {
+export function useBillingPlansQuery(enabled = true) {
   return useQuery({
     queryKey: ["billing", "plans"],
     queryFn: () => apiRequest<BillingPlanListResponse>(`/v1/billing/plans`),
+    enabled,
   });
 }
 

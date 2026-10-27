@@ -81,6 +81,9 @@ type APIConfig struct {
 
 type AppConfig struct {
 	PublicBaseURL string `toml:"public_base_url" validate:"required"`
+	// AdminUserIDs are the Kite user IDs of who can review bundles for the
+	// marketplace.
+	AdminUserIDs []string `toml:"admin_user_ids"`
 }
 
 type EncryptionConfig struct {
@@ -157,8 +160,11 @@ type DebugConfig struct {
 }
 
 type UserLimitsConfig struct {
-	MaxAppsPerUser int `toml:"max_apps_per_user"`
-	MaxAssetSize   int `toml:"max_asset_size"`
+	MaxAppsPerUser        int `toml:"max_apps_per_user"`
+	MaxAssetSize          int `toml:"max_asset_size"`
+	MaxAssetStoragePerApp int `toml:"max_asset_storage_per_app"`
+	MaxBundlesPerUser     int `toml:"max_bundles_per_user"`
+	MaxAPITokensPerUser   int `toml:"max_api_tokens_per_user"`
 }
 
 type IntegrationConfig struct {

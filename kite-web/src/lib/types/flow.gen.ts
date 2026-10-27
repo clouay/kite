@@ -37,6 +37,11 @@ export type FlowNodeType = string;
 export const FlowNodeTypeEntryCommand: FlowNodeType = "entry_command";
 export const FlowNodeTypeEntryEvent: FlowNodeType = "entry_event";
 export const FlowNodeTypeEntryComponentButton: FlowNodeType = "entry_component_button";
+/**
+ * Notes are text the editor puts on the canvas. They aren't blocks:
+ * nothing connects to them, so they never run.
+ */
+export const FlowNodeTypeNote: FlowNodeType = "note";
 export const FlowNodeTypeOptionCommandArgument: FlowNodeType = "option_command_argument";
 export const FlowNodeTypeOptionCommandPermissions: FlowNodeType = "option_command_permissions";
 export const FlowNodeTypeOptionCommandContexts: FlowNodeType = "option_command_contexts";
@@ -130,6 +135,11 @@ export interface FlowNode {
   type?: FlowNodeType;
   data: FlowNodeData & StringIndexable;
   position: FlowNodePosition;
+  /**
+   * Only notes have a size, other nodes are as large as their content.
+   */
+  width?: number /* float64 */;
+  height?: number /* float64 */;
 }
 export interface FlowNodeData {
   /**
@@ -283,9 +293,13 @@ export interface FlowNodeData {
   random_min?: string;
   random_max?: string;
   /**
-   * Items of the item mode, one per line, or a list placeholder.
+   * Items of the item and items modes, one per line, or a list placeholder.
    */
   random_items?: string;
+  /**
+   * How many different items the items mode picks.
+   */
+  random_count?: string;
   /**
    * Event Entry
    */
@@ -399,6 +413,10 @@ export type RandomMode = string;
  */
 export const RandomModeNumber: RandomMode = "number";
 export const RandomModeItem: RandomMode = "item";
+/**
+ * Several different items, see randomItems.
+ */
+export const RandomModeItems: RandomMode = "items";
 export type RobloxLookupType = string;
 export const RobloxLookupTypeID: RobloxLookupType = "id";
 export const RobloxLookupTypeName: RobloxLookupType = "username";

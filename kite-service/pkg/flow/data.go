@@ -64,7 +64,20 @@ type FlowData struct {
 func (d FlowData) Validate() error {
 	return validation.ValidateStruct(&d,
 		validation.Field(&d.Nodes),
-		validation.Field(&d.Edges),
+		validation.Field(&d.Edges, validation.By(func(any) error {
+			notes := make(map[string]bool)
+			for _, n := range d.Nodes {
+				if n.Type == FlowNodeTypeNote {
+					notes[n.ID] = true
+				}
+			}
+			for _, e := range d.Edges {
+				if notes[e.Source] || notes[e.Target] {
+					return errors.New("notes can't be connected")
+				}
+			}
+			return nil
+		})),
 		validation.Field(&d.Parameters, validation.Length(0, 50), validation.By(func(any) error {
 			keys := make(map[string]bool, len(d.Parameters))
 			for _, p := range d.Parameters {
@@ -86,6 +99,12 @@ const (
 	FlowParameterTypeChannel  FlowParameterType = "channel"
 	FlowParameterTypeRole     FlowParameterType = "role"
 )
+
+// Picked is whether the value is picked from a server, as the ID of a channel
+// or role.
+func (t FlowParameterType) Picked() bool {
+	return t == FlowParameterTypeChannel || t == FlowParameterTypeRole
+}
 
 // FlowParameter is a value the blocks of a flow use as {{params.<key>}}.
 type FlowParameter struct {
@@ -121,6 +140,10 @@ const (
 	FlowNodeTypeEntryCommand         FlowNodeType = "entry_command"
 	FlowNodeTypeEntryEvent           FlowNodeType = "entry_event"
 	FlowNodeTypeEntryComponentButton FlowNodeType = "entry_component_button"
+
+	// Notes are text the editor puts on the canvas. They aren't blocks:
+	// nothing connects to them, so they never run.
+	FlowNodeTypeNote FlowNodeType = "note"
 
 	FlowNodeTypeOptionCommandArgument    FlowNodeType = "option_command_argument"
 	FlowNodeTypeOptionCommandPermissions FlowNodeType = "option_command_permissions"
@@ -214,11 +237,20 @@ const EventTypeScheduleCron = "cron"
 // sent to their webhook URL.
 const EventTypeWebhook = "webhook"
 
+// Same as noteMaxLength and noteTitleMaxLength in the editor.
+const (
+	noteMaxLength      = 2000
+	noteTitleMaxLength = 100
+)
+
 type FlowNode struct {
 	ID       string           `json:"id"`
 	Type     FlowNodeType     `json:"type,omitempty"`
 	Data     FlowNodeData     `json:"data" tstype:"FlowNodeData & StringIndexable"`
 	Position FlowNodePosition `json:"position"`
+	// Only notes have a size, other nodes are as large as their content.
+	Width  float64 `json:"width,omitempty"`
+	Height float64 `json:"height,omitempty"`
 }
 
 func (n FlowNode) Validate() error {
@@ -229,6 +261,14 @@ func (n FlowNode) Validate() error {
 	)
 	if err != nil {
 		return err
+	}
+
+	if n.Type == FlowNodeTypeNote {
+		title, _ := n.Data.Setting("note_title").(string)
+		text, _ := n.Data.Setting("note_text").(string)
+		if utf8.RuneCountInString(title) > noteTitleMaxLength || utf8.RuneCountInString(text) > noteMaxLength {
+			return errors.New("note is too long")
+		}
 	}
 
 	return n.Data.Validate(n.Type)
@@ -359,8 +399,10 @@ type FlowNodeData struct {
 	RandomMode RandomMode `json:"random_mode,omitempty"`
 	RandomMin  string     `json:"random_min,omitempty"`
 	RandomMax  string     `json:"random_max,omitempty"`
-	// Items of the item mode, one per line, or a list placeholder.
+	// Items of the item and items modes, one per line, or a list placeholder.
 	RandomItems string `json:"random_items,omitempty"`
+	// How many different items the items mode picks.
+	RandomCount string `json:"random_count,omitempty"`
 
 	// Event Entry
 	EventType         string `json:"event_type,omitempty"`
@@ -645,6 +687,10 @@ func (d FlowNodeData) Validate(nodeType FlowNodeType) error {
 // block can have, in characters.
 const maxRandomItemsLength = 10000
 
+// maxRandomCount is the most items the items mode of a Generate Random Value
+// block picks at once.
+const maxRandomCount = 100
+
 // maxCooldownDuration is the longest cooldown a cooldown block can have.
 // Cooldowns are kept in memory and reset when Kite restarts, so they have to
 // stay short. Longer cooldowns, like daily rewards, should use stored
@@ -761,6 +807,8 @@ const (
 	// no mode.
 	RandomModeNumber RandomMode = "number"
 	RandomModeItem   RandomMode = "item"
+	// Several different items, see randomItems.
+	RandomModeItems RandomMode = "items"
 )
 
 type RobloxLookupType string

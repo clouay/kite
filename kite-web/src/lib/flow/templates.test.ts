@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { messageSchema } from "../message/schema";
 import { getTemplates, templateFiles } from "./templateFiles";
@@ -60,6 +62,7 @@ describe("templates", () => {
       event_listeners: t.event_listeners,
       messages: t.messages ?? [],
       variables: t.variables ?? [],
+      changelog: t.changelog ?? [],
     }));
     await expect(JSON.stringify(installed, null, 2) + "\n").toMatchFileSnapshot(
       "../../../../kite-service/internal/core/bundle/templates.json"
@@ -70,6 +73,18 @@ describe("templates", () => {
     for (const file of templateFiles) {
       const res = templateFileSchema.safeParse(file);
       expect(res.error?.issues, (file as TemplateFile).id).toBeUndefined();
+    }
+  });
+
+  // Apps see the notes when they update, so every new version needs some.
+  it("have notes for every version after the first", () => {
+    for (const file of templateFiles as TemplateFile[]) {
+      const versions = (file.changelog ?? []).map((c) => c.version);
+      const expected = Array.from(
+        { length: file.version - 1 },
+        (_, i) => file.version - i
+      );
+      expect(versions, file.id).toEqual(expected);
     }
   });
 
@@ -188,6 +203,22 @@ describe("templates", () => {
         expect(parameterKeys(JSON.stringify(message.data)), message.id).toEqual(
           []
         );
+      }
+    }
+  });
+});
+
+describe("marketplace", () => {
+  // Templates are at /marketplace/<id>, next to pages like a future
+  // /marketplace/browse, which would win. Users' bundles have random IDs of
+  // 16 characters, so only official templates can clash.
+  it("has no template with the name of one of its pages", () => {
+    for (const dir of ["marketplace", "apps/[appId]/marketplace"]) {
+      const pages = readdirSync(join(__dirname, "../../pages", dir)).map(
+        (name) => name.replace(/\.tsx$/, "")
+      );
+      for (const template of getTemplates()) {
+        expect(pages, `${dir}/${template.id}`).not.toContain(template.id);
       }
     }
   });

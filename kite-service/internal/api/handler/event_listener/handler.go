@@ -160,7 +160,7 @@ func (h *EventListenerHandler) HandleEventListenerUpdate(c *handler.Context, req
 		return nil, err
 	}
 
-	eventListener, err := h.eventListenerStore.UpdateEventListener(c.Context(), updated)
+	eventListener, err := h.eventListenerStore.UpdateEventListener(c.Context(), updated, c.ItemChange(req.EditorSession))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, handler.ErrNotFound("unknown_event_listener", "Event listener not found")
@@ -198,7 +198,7 @@ func (h *EventListenerHandler) HandleEventListenerUpdateEnabled(c *handler.Conte
 		FlowSource:  c.EventListener.FlowSource,
 		Enabled:     req.Enabled,
 		UpdatedAt:   time.Now().UTC(),
-	})
+	}, c.ItemChange(""))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, handler.ErrNotFound("unknown_event_listener", "Event listener not found")
@@ -210,7 +210,7 @@ func (h *EventListenerHandler) HandleEventListenerUpdateEnabled(c *handler.Conte
 }
 
 func (h *EventListenerHandler) HandleEventListenerDelete(c *handler.Context) (*wire.EventListenerDeleteResponse, error) {
-	err := h.eventListenerStore.DeleteEventListener(c.Context(), c.EventListener.ID)
+	err := h.eventListenerStore.DeleteEventListener(c.Context(), c.EventListener.ID, c.Session.UserID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, handler.ErrNotFound("unknown_event_listener", "Event listener not found")
@@ -241,6 +241,10 @@ func compileEventListener(c *handler.Context, source model.EventSource, flowSour
 	// loaded and get the error the next time they're edited.
 	if err := flow.ValidateEventFilters(eventFlow); err != nil {
 		return nil, handler.ErrBadRequest("invalid_event_filter", err.Error())
+	}
+
+	if err := eventFlow.CheckInteractionBlocks(); err != nil {
+		return nil, handler.ErrBadRequest("invalid_flow", err.Error())
 	}
 
 	if source == model.EventSourceSchedule {

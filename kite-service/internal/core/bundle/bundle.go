@@ -49,6 +49,9 @@ type Parameter struct {
 	Description string                 `json:"description"`
 	Type        flow.FlowParameterType `json:"type"`
 	Required    bool                   `json:"required"`
+	// Default is the value the owner shared for it, which it starts with
+	// when the bundle is added. Only text parameters have one.
+	Default string `json:"default,omitempty"`
 }
 
 // flowParameter is the parameter as the flows that use it get it.
@@ -83,6 +86,9 @@ type Message struct {
 	// SendTo is the key of the channel parameter the message is posted in
 	// after the install.
 	SendTo string `json:"send_to"`
+	// Customize lets the user change the message while adding the bundle,
+	// like the text of a sticky message. Data is what it starts with.
+	Customize bool `json:"customize,omitempty"`
 }
 
 // Official returns the bundles of templates.json.
@@ -95,8 +101,17 @@ func Official() []*Bundle {
 }
 
 type officialBundle struct {
-	bundle  *Bundle
-	listing model.BundleListing
+	bundle    *Bundle
+	listing   model.BundleListing
+	changelog []model.BundleVersionNotes
+}
+
+// changelog is what changed in the versions of an official bundle.
+type changelog struct {
+	Changelog []struct {
+		Version int    `json:"version"`
+		Notes   string `json:"notes"`
+	} `json:"changelog"`
 }
 
 // Loaded on startup, so the service doesn't start with broken bundles.
@@ -115,6 +130,13 @@ var official = func() []officialBundle {
 		res[i].bundle = b
 		if err := json.Unmarshal(content, &res[i].listing); err != nil {
 			panic(fmt.Sprintf("failed to load bundles: %v", err))
+		}
+		var c changelog
+		if err := json.Unmarshal(content, &c); err != nil {
+			panic(fmt.Sprintf("failed to load bundles: %v", err))
+		}
+		for _, n := range c.Changelog {
+			res[i].changelog = append(res[i].changelog, model.BundleVersionNotes{Version: n.Version, Notes: n.Notes})
 		}
 	}
 	return res
@@ -143,15 +165,23 @@ func SyncOfficial(ctx context.Context, s store.BundleStore) error {
 		if err != nil {
 			return fmt.Errorf("failed to encode bundle %s: %w", b.ID, err)
 		}
+		var notes string
+		for _, n := range o.changelog {
+			if n.Version == b.Version {
+				notes = n.Notes
+			}
+		}
 		err = s.UpsertOfficialBundle(ctx, &model.Bundle{
-			ID:          b.ID,
-			Name:        b.Name,
-			Description: b.Description,
-			Version:     b.Version,
-			Content:     content,
-			Listing:     &listing,
-			CreatedAt:   now,
-			UpdatedAt:   now,
+			ID:           b.ID,
+			Name:         b.Name,
+			Description:  b.Description,
+			Version:      b.Version,
+			Content:      content,
+			Listing:      &listing,
+			Notes:        notes,
+			VersionNotes: o.changelog,
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to store bundle %s: %w", b.ID, err)
@@ -231,6 +261,26 @@ type SelectedMessage struct {
 	Description null.String
 	Data        message.MessageData
 	FlowSources map[string]flow.FlowData
+	Customize   bool
+	// Default is the data of the bundle when the user changed it, see
+	// Selection.Customize.
+	Default *message.MessageData
+}
+
+// Customize replaces the data of the messages the user changed while adding
+// the bundle, by their keys. Only selected messages that allow it can be
+// changed.
+func (s *Selection) Customize(data map[string]message.MessageData) error {
+	for key, d := range data {
+		i := slices.IndexFunc(s.Messages, func(m SelectedMessage) bool { return m.ID == key })
+		if i == -1 || !s.Messages[i].Customize {
+			return invalid("the message %s can't be changed", key)
+		}
+		def := s.Messages[i].Data
+		s.Messages[i].Default = &def
+		s.Messages[i].Data = d
+	}
+	return nil
 }
 
 // InvalidError is a choice of items or parameters that can't be installed.
@@ -325,6 +375,7 @@ func (b *Bundle) Select(keys []string, values map[string]string) (*Selection, er
 			Name:        m.Name,
 			Description: m.Description,
 			FlowSources: make(map[string]flow.FlowData, len(m.FlowSources)),
+			Customize:   m.Customize,
 		}
 		if err := json.Unmarshal(m.Data, &msg.Data); err != nil {
 			return nil, fmt.Errorf("failed to decode bundle message: %w", err)

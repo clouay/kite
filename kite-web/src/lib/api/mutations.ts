@@ -88,6 +88,21 @@ import {
   VariableValueSetResponse,
   BundleInstallCreateRequest,
   BundleExportRequest,
+  BundleCreateRequest,
+  BundleCreateResponse,
+  BundleVersionCreateRequest,
+  BundleVersionCreateResponse,
+  BundleDeleteResponse,
+  BundleListingDeleteResponse,
+  BundleListingSubmitRequest,
+  BundleListingSubmitResponse,
+  BundleRemoveRequest,
+  BundleRemoveResponse,
+  BundleReportCreateRequest,
+  BundleReportCreateResponse,
+  BundleReportDismissResponse,
+  BundleReviewDecideRequest,
+  BundleReviewDecideResponse,
   BundleExportResponse,
   BundleImportRequest,
   BundleImportResponse,
@@ -97,6 +112,9 @@ import {
   BundleInstallParametersUpdateResponse,
   BundleInstallUpdateRequest,
   BundleInstallUpdateResponse,
+  APITokenCreateRequest,
+  APITokenCreateResponse,
+  APITokenDeleteResponse,
 } from "../types/wire.gen";
 import client, { apiRequest } from "./client";
 import { flowAIUsageQueryKey } from "./queries";
@@ -426,6 +444,203 @@ export function useBundleExportMutation(appId: string) {
           "Content-Type": "application/json",
         },
       }),
+  });
+}
+
+export function useBundleCreateMutation(appId: string) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (req: BundleCreateRequest) =>
+      apiRequest<BundleCreateResponse>(`/v1/apps/${appId}/bundles`, {
+        method: "POST",
+        body: JSON.stringify(req),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["users", "@me", "bundles"] });
+    },
+  });
+}
+
+export function useBundleVersionCreateMutation(appId: string) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      bundleId,
+      ...req
+    }: BundleVersionCreateRequest & { bundleId: string }) =>
+      apiRequest<BundleVersionCreateResponse>(
+        `/v1/apps/${appId}/bundles/${bundleId}/versions`,
+        {
+          method: "POST",
+          body: JSON.stringify(req),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["users", "@me", "bundles"] });
+      // Apps that installed it are offered the new version.
+      client.invalidateQueries({ queryKey: ["bundles"] });
+    },
+  });
+}
+
+export function useBundleDeleteMutation() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (bundleId: string) =>
+      apiRequest<BundleDeleteResponse>(`/v1/bundles/${bundleId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: (_, bundleId) => {
+      client.invalidateQueries({ queryKey: ["users", "@me", "bundles"] });
+      client.invalidateQueries({ queryKey: ["bundles", bundleId] });
+    },
+  });
+}
+
+export function useBundleListingSubmitMutation() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      bundleId,
+      listing,
+    }: {
+      bundleId: string;
+      listing: BundleListingSubmitRequest;
+    }) =>
+      apiRequest<BundleListingSubmitResponse>(
+        `/v1/bundles/${bundleId}/listing`,
+        {
+          method: "POST",
+          body: JSON.stringify(listing),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["users", "@me", "bundles"] });
+    },
+  });
+}
+
+export function useBundleReviewDecideMutation() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      reviewId,
+      req,
+    }: {
+      reviewId: string;
+      req: BundleReviewDecideRequest;
+    }) =>
+      apiRequest<BundleReviewDecideResponse>(
+        `/v1/admin/bundle-reviews/${reviewId}/decision`,
+        {
+          method: "POST",
+          body: JSON.stringify(req),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      ),
+    // Only the list, which drops the decided review and closes it, or has
+    // its new ID if it changed since it was loaded.
+    onSuccess: () => {
+      client.invalidateQueries({
+        queryKey: ["admin", "bundle-reviews"],
+        exact: true,
+      });
+    },
+  });
+}
+
+export function useBundleReportCreateMutation() {
+  return useMutation({
+    mutationFn: ({
+      bundleId,
+      req,
+    }: {
+      bundleId: string;
+      req: BundleReportCreateRequest;
+    }) =>
+      apiRequest<BundleReportCreateResponse>(
+        `/v1/bundles/${bundleId}/reports`,
+        {
+          method: "POST",
+          body: JSON.stringify(req),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      ),
+  });
+}
+
+export function useBundleReportDismissMutation() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (reportId: string) =>
+      apiRequest<BundleReportDismissResponse>(
+        `/v1/admin/bundle-reports/${reportId}/dismissal`,
+        { method: "POST" }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["admin", "bundle-reports"] });
+    },
+  });
+}
+
+export function useBundleRemoveMutation() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      bundleId,
+      req,
+    }: {
+      bundleId: string;
+      req: BundleRemoveRequest;
+    }) =>
+      apiRequest<BundleRemoveResponse>(
+        `/v1/admin/bundles/${bundleId}/removal`,
+        {
+          method: "POST",
+          body: JSON.stringify(req),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["admin"] });
+    },
+  });
+}
+
+export function useBundleListingDeleteMutation() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (bundleId: string) =>
+      apiRequest<BundleListingDeleteResponse>(
+        `/v1/bundles/${bundleId}/listing`,
+        { method: "DELETE" }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["users", "@me", "bundles"] });
+    },
   });
 }
 
@@ -1275,6 +1490,39 @@ export function useFlowAIChatMutation(appId: string) {
         // Answers that couldn't be used count too.
         client.invalidateQueries({ queryKey: flowAIUsageQueryKey(appId) });
       }
+    },
+  });
+}
+
+export function useAPITokenCreateMutation() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (req: APITokenCreateRequest) =>
+      apiRequest<APITokenCreateResponse>(`/v1/users/@me/api-tokens`, {
+        method: "POST",
+        body: JSON.stringify(req),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["users", "@me", "api-tokens"] });
+    },
+  });
+}
+
+export function useAPITokenDeleteMutation(tokenId: string) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      apiRequest<APITokenDeleteResponse>(
+        `/v1/users/@me/api-tokens/${tokenId}`,
+        { method: "DELETE" }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["users", "@me", "api-tokens"] });
     },
   });
 }

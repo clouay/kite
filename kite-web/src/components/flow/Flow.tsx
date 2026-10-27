@@ -17,6 +17,7 @@ import FlowSecretsDrawer from "./FlowSecretsDrawer";
 import FlowParametersDrawer from "./FlowParametersDrawer";
 import { useIsMobile } from "@/lib/hooks/use-mobile";
 import { useFlowParametersStore } from "@/lib/flow/parametersStore";
+import { track } from "@/lib/analytics";
 import { isNoteNode } from "@/lib/flow/notes";
 
 interface Props {

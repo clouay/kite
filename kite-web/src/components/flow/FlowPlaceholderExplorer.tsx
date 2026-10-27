@@ -64,7 +64,7 @@ export default function FlowPlaceholderExplorer({
       : [];
     if (onlyParameters) return parameterGroup;
 
-    const res = [
+    let res = [
       ...getAvailablePlaceholders(
         selected?.id,
         nodes,

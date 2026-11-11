@@ -1,7 +1,7 @@
 import { useCommandsDeployMutation } from "@/lib/api/mutations";
 import { useApp } from "@/lib/hooks/api";
 import { useAppId } from "@/lib/hooks/params";
-import { App } from "@/lib/types/wire.gen";
+import { App, Command } from "@/lib/types/wire.gen";
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -11,11 +11,25 @@ import {
 import { toast } from "sonner";
 import LoadingButton from "../common/LoadingButton";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
-import { useTrack } from "@/lib/analytics";
+import { track } from "@/lib/analytics";
+import { isSlashCommand } from "@/lib/flow/commandType";
+import { CommandType } from "@/lib/types/flow.gen";
 
-export type CommandDeployState = "pending" | "stopped" | "error" | "deployed";
+export type CommandDeployState =
+  | "pending"
+  | "stopped"
+  | "error"
+  | "deployed"
+  | "disabled";
 
-export function commandDeployState(app: App): CommandDeployState {
+// Pass the command for its own state. Disabled commands aren't in Discord.
+export function commandDeployState(
+  app: App,
+  command?: Command
+): CommandDeployState {
+  if (command && !command.enabled) {
+    return "disabled";
+  }
   if (app.commands_deploy_pending) {
     return app.enabled ? "pending" : "stopped";
   }
@@ -23,15 +37,22 @@ export function commandDeployState(app: App): CommandDeployState {
 }
 
 // Whether Discord rejected the commands because of the command with this name.
-// Subcommands are deployed as part of their root command.
-export function isCommandDeployErrorCause(app: App, commandName: string) {
-  return app.commands_deploy_error?.command === commandName.split(" ")[0];
+// Subcommands are deployed as part of their root command. User and message
+// command names can have spaces, but no subcommands.
+export function isCommandDeployErrorCause(
+  app: App,
+  commandName: string,
+  commandType?: CommandType
+) {
+  const root = isSlashCommand(commandType)
+    ? commandName.split(" ")[0]
+    : commandName;
+  return app.commands_deploy_error?.command === root;
 }
 
 // Sends the commands to Discord again, even if they look unchanged.
 export function useRedeployCommands(onSuccess?: () => void) {
   const deployMutation = useCommandsDeployMutation(useAppId());
-  const track = useTrack();
 
   function redeploy() {
     track("commands_synced");

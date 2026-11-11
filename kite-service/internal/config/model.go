@@ -16,11 +16,15 @@ type Config struct {
 	Engine     EngineConfig     `toml:"engine"`
 	Gateway    GatewayConfig    `toml:"gateway"`
 	OpenAI     OpenAIConfig     `toml:"openai"`
+	OpenRouter OpenRouterConfig `toml:"openrouter"`
 	Assistant  AssistantConfig  `toml:"assistant"`
 	Billing    BillingConfig    `toml:"billing"`
 	Encryption EncryptionConfig `toml:"encryption"`
 	HTTP       HTTPConfig       `toml:"http"`
 	Debug      DebugConfig      `toml:"debug"`
+	// Kite's own registration at the services of integrations, by
+	// integration ID, like [integrations.erlc].
+	Integrations map[string]IntegrationConfig `toml:"integrations"`
 
 	ClusterCount int `toml:"cluster_count"`
 	ClusterIndex int `toml:"cluster_index"`
@@ -157,7 +161,20 @@ type UserLimitsConfig struct {
 	MaxAssetSize   int `toml:"max_asset_size"`
 }
 
+type IntegrationConfig struct {
+	// Kite's own key, sent next to the app's credential.
+	APIKey string `toml:"api_key"`
+	// Kite's ID at the service, used in authorization links.
+	AppID string `toml:"app_id"`
+}
+
 type OpenAIConfig struct {
+	APIKey string `toml:"api_key"`
+}
+
+// OpenRouterConfig is for the AI blocks that decide, like AI Choice, which
+// run on a decision model only OpenRouter serves.
+type OpenRouterConfig struct {
 	APIKey string `toml:"api_key"`
 }
 
@@ -194,16 +211,17 @@ type BillingPlanConfig struct {
 
 	DiscordRoleID string `toml:"discord_role_id"`
 
-	FeatureMaxCollaborators     int  `toml:"feature_max_collaborators"`
-	FeatureUsageCreditsPerMonth int  `toml:"feature_usage_credits_per_month"`
-	FeatureMaxGuilds            int  `toml:"feature_max_guilds"`
-	FeatureMaxCommands          int  `toml:"feature_max_commands"`
-	FeatureMaxVariables         int  `toml:"feature_max_variables"`
-	FeatureMaxSecrets           int  `toml:"feature_max_secrets"`
-	FeatureMaxMessages          int  `toml:"feature_max_messages"`
-	FeatureMaxEventListeners    int  `toml:"feature_max_event_listeners"`
-	FeaturePrioritySupport      bool `toml:"feature_priority_support"`
-	FeatureRotatingStatus       bool `toml:"feature_rotating_status"`
+	FeatureMaxCollaborators       int  `toml:"feature_max_collaborators"`
+	FeatureUsageCreditsPerMonth   int  `toml:"feature_usage_credits_per_month"`
+	FeatureMaxGuilds              int  `toml:"feature_max_guilds"`
+	FeatureMaxCommands            int  `toml:"feature_max_commands"`
+	FeatureMaxContextMenuCommands int  `toml:"feature_max_context_menu_commands"`
+	FeatureMaxVariables           int  `toml:"feature_max_variables"`
+	FeatureMaxSecrets             int  `toml:"feature_max_secrets"`
+	FeatureMaxMessages            int  `toml:"feature_max_messages"`
+	FeatureMaxEventListeners      int  `toml:"feature_max_event_listeners"`
+	FeaturePrioritySupport        bool `toml:"feature_priority_support"`
+	FeatureRotatingStatus         bool `toml:"feature_rotating_status"`
 
 	FeatureMaxScheduledEventListeners int `toml:"feature_max_scheduled_event_listeners"`
 	FeatureMinScheduleIntervalSeconds int `toml:"feature_min_schedule_interval_seconds"`

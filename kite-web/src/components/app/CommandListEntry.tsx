@@ -10,10 +10,13 @@ import {
   AlertCircleIcon,
   CheckIcon,
   CircleDotIcon,
+  CircleOffIcon,
   RefreshCwIcon,
   CopyPlusIcon,
   EllipsisIcon,
   SlashSquareIcon,
+  MousePointerClickIcon,
+  MessageSquareIcon,
   Trash2Icon,
   Share2Icon,
 } from "lucide-react";
@@ -45,6 +48,8 @@ import {
 } from "./CommandDeployStatus";
 import CommandDuplicateDialog from "./CommandDuplicateDialog";
 import FlowExportDialog from "./FlowExportDialog";
+import { commandType } from "@/lib/flow/commandType";
+import { CommandTypeMessage, CommandTypeUser } from "@/lib/types/flow.gen";
 
 export default function CommandListEntry({ command }: { command: Command }) {
   const router = useRouter();
@@ -78,6 +83,14 @@ export default function CommandListEntry({ command }: { command: Command }) {
     });
   }, [updateEnabledMutation, command.enabled]);
 
+  const type = commandType(command.flow_source);
+  const TypeIcon =
+    type === CommandTypeUser
+      ? MousePointerClickIcon
+      : type === CommandTypeMessage
+      ? MessageSquareIcon
+      : SlashSquareIcon;
+
   return (
     <Card className="relative">
       <div className="flex items-center justify-between px-6 pt-4 sm:absolute sm:top-0 sm:right-0 sm:h-full sm:flex-col sm:items-end sm:p-3">
@@ -93,7 +106,7 @@ export default function CommandListEntry({ command }: { command: Command }) {
       </div>
       <CardHeader className="pt-3 sm:pt-6 sm:pr-56">
         <CardTitle className="text-base flex items-center space-x-2">
-          <SlashSquareIcon className="h-5 w-5 text-muted-foreground" />
+          <TypeIcon className="h-5 w-5 text-muted-foreground" />
           <div>{command.name}</div>
         </CardTitle>
         <CardDescription className="text-sm">
@@ -158,7 +171,7 @@ export default function CommandListEntry({ command }: { command: Command }) {
 }
 
 function DeployIcon({ app, command }: { app: App; command: Command }) {
-  const state = commandDeployState(app);
+  const state = commandDeployState(app, command);
 
   let icon = <CheckIcon className="h-5 w-5 text-green-500" />;
   let text = "Up to date in Discord.";
@@ -167,11 +180,20 @@ function DeployIcon({ app, command }: { app: App; command: Command }) {
       <RefreshCwIcon className="h-5 w-5 text-muted-foreground animate-spin" />
     );
     text = "Updating in Discord...";
+  } else if (state === "disabled") {
+    icon = <CircleOffIcon className="h-5 w-5 text-muted-foreground" />;
+    text = "Not in Discord while disabled.";
   } else if (state === "stopped") {
     icon = <CircleDotIcon className="h-5 w-5 text-orange-500" />;
     text = "Goes to Discord once your app runs again.";
   } else if (state === "error") {
-    if (isCommandDeployErrorCause(app, command.name)) {
+    if (
+      isCommandDeployErrorCause(
+        app,
+        command.name,
+        commandType(command.flow_source)
+      )
+    ) {
       icon = <AlertCircleIcon className="h-5 w-5 text-destructive" />;
       text = "Discord rejected this command. See the error above.";
     } else {

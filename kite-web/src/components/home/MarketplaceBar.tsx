@@ -17,16 +17,27 @@ export default function MarketplaceBar({
   category,
   search = true,
 }: {
-  // The one to highlight, like the category of a template, or null for All.
-  category?: TemplateCategory | null;
+  // The one to highlight, like the category of a template, or null for Home.
+  category?: TemplateCategory | "all" | null;
   search?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
 
+  const filtered =
+    category === null &&
+    Boolean(
+      router.query.q ||
+        router.query.source ||
+        router.query.sort ||
+        router.query.starred
+    );
+  const active = filtered ? "all" : category;
+
   const links = [
-    { value: null, label: "All", href: "/marketplace" },
+    { value: null, label: "Home", href: "/marketplace" },
+    { value: "all" as const, label: "All", href: categoryPath("all") },
     ...templateCategories.map((c) => ({
       value: c.value,
       label: c.label,
@@ -52,7 +63,7 @@ export default function MarketplaceBar({
               href={link.href}
               className={cn(
                 "flex-none px-2.5 py-1 rounded-md text-sm transition-colors",
-                category === link.value
+                active === link.value
                   ? "bg-muted text-foreground font-medium"
                   : "text-muted-foreground hover:text-foreground"
               )}

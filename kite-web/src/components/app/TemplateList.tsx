@@ -61,7 +61,7 @@ export function TemplateList({
   rows?: boolean;
   // The page of a category, which the row of a category links to. Without
   // one, it filters by the category.
-  categoryHref?: (category: TemplateCategory) => LinkProps["href"];
+  categoryHref?: (category: TemplateCategory | "all") => LinkProps["href"];
   // The day the featured templates are picked for, from when a page was
   // rendered on the server, so it doesn't change while it hydrates. Today
   // without one.
@@ -72,9 +72,11 @@ export function TemplateList({
   const router = useRouter();
   const param = (key: string) =>
     typeof router.query[key] === "string" ? router.query[key] : undefined;
-  const category =
-    templateCategories.find((c) => c.value === param("category"))?.value ??
-    null;
+  const category: TemplateCategory | "all" | null =
+    param("category") === "all"
+      ? "all"
+      : templateCategories.find((c) => c.value === param("category"))?.value ??
+        null;
   const source = (sources.find((s) => s.value === param("source"))?.value ??
     "all") as Source;
   const sort = (sorts.find((s) => s === param("sort")) ?? "installs") as Sort;
@@ -89,7 +91,7 @@ export function TemplateList({
       scroll: false,
     });
   };
-  const setCategory = (value: TemplateCategory | null) =>
+  const setCategory = (value: TemplateCategory | "all" | null) =>
     setQuery({ category: value });
   const setSource = (value: Source) =>
     setQuery({ source: value === "all" ? null : value });
@@ -139,7 +141,7 @@ export function TemplateList({
 
   const filtered = templates.filter(
     (t) =>
-      (!category || t.category === category) &&
+      (!category || category === "all" || t.category === category) &&
       (source === "all" ||
         (source === "kite") === (t.author.kind === "kite")) &&
       (!addedOnly || !!added?.(t)) &&
@@ -184,8 +186,23 @@ export function TemplateList({
           {!hero && (
             <>
               <Chip
-                active={category === null}
-                onClick={() => setCategory(null)}
+                active={browsing}
+                onClick={() => {
+                  setSearch("");
+                  setAddedOnly(false);
+                  setQuery({
+                    category: null,
+                    sort: null,
+                    source: null,
+                    starred: null,
+                    q: null,
+                  });
+                }}
+                label="Home"
+              />
+              <Chip
+                active={category === "all" || (!category && !browsing)}
+                onClick={() => setCategory("all")}
                 label="All"
                 count={templates.length}
               />
@@ -255,7 +272,17 @@ export function TemplateList({
       added={added}
       entry={entry}
       showAll={(sort, source) => {
-        setQuery({ sort, source: source ?? null });
+        if (categoryHref) {
+          const query: Record<string, string> = { sort };
+          if (source) query.source = source;
+          router.push({ pathname: String(categoryHref("all")), query });
+          return;
+        }
+        setQuery({
+          category: "all",
+          sort,
+          source: source ?? null,
+        });
         scrollToAll();
       }}
       categoryHref={categoryHref}
@@ -332,7 +359,7 @@ function Rows({
   added?: (template: Template) => boolean;
   entry: (template: Template) => React.ReactNode;
   showAll: (sort: Sort, source?: Source) => void;
-  categoryHref?: (category: TemplateCategory) => LinkProps["href"];
+  categoryHref?: (category: TemplateCategory | "all") => LinkProps["href"];
   featuredDay?: number;
 }) {
   const featured = featuredTemplates(templates, featuredDay ?? utcDay());

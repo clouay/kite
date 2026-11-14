@@ -235,10 +235,15 @@ func executeActionForumPostCreate(n *CompiledFlowNode, ctx *FlowContext) error {
 		return err
 	}
 
+	msgData := data.ToSendMessageData(opts)
+	if files := ctx.FilesForMessage(&data); len(files) > 0 {
+		msgData.Files = append(msgData.Files, files...)
+	}
+
 	thread, err := ctx.Discord.StartThreadInForum(ctx, channelID, api.StartForumThreadData{
 		Name:           name.String(),
 		AppliedTags:    tags,
-		Message:        data.ToSendMessageData(opts),
+		Message:        msgData,
 		AuditLogReason: api.AuditLogReason(auditLogReason.String()),
 	})
 	if err != nil {

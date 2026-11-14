@@ -61,6 +61,7 @@ export const appPageParams: Record<string, string> = {
   bundles: "[bundleId]",
   commands: "[cmdId]",
   events: "[eventId]",
+  images: "[imageId]",
   marketplace: "[templateId]",
   messages: "[messageId]",
   variables: "[variableId]",

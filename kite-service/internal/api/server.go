@@ -86,6 +86,7 @@ func NewAPIServer(
 	itemVersionStore store.ItemVersionStore,
 	apiTokenStore store.APITokenStore,
 	oauthCodeStore store.OAuthCodeStore,
+	imageStore store.ImageTemplateStore,
 	notifier *notify.Notifier,
 ) *APIServer {
 	s := &APIServer{
@@ -125,6 +126,7 @@ func NewAPIServer(
 		itemVersionStore,
 		apiTokenStore,
 		oauthCodeStore,
+		imageStore,
 		notifier,
 	)
 	return s

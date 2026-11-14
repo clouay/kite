@@ -216,6 +216,7 @@ const (
 	FlowNodeTypeActionVoiceChannelLeave     FlowNodeType = "action_voice_channel_leave"
 	FlowNodeTypeActionStatusSet             FlowNodeType = "action_status_set"
 	FlowNodeTypeActionServerLeave           FlowNodeType = "action_server_leave"
+	FlowNodeTypeActionImageGenerate         FlowNodeType = "action_image_generate"
 
 	FlowNodeTypeControlConditionCompare     FlowNodeType = "control_condition_compare"
 	FlowNodeTypeControlConditionItemCompare FlowNodeType = "control_condition_item_compare"
@@ -324,6 +325,10 @@ type FlowNodeData struct {
 
 	// Guild Get, and the guild of member, channel, role and voice blocks
 	GuildTarget string `json:"guild_target,omitempty"`
+
+	// Image Generate
+	ImageTemplateID string `json:"image_template_id,omitempty"`
+	ImageVariables  string `json:"image_variables,omitempty"`
 
 	// Message & Response Create, Edit, Delete
 	MessageTarget     string               `json:"message_target,omitempty"`

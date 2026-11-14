@@ -1,13 +1,16 @@
 package flow
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
 
 	"github.com/diamondburned/arikawa/v3/discord"
+	"github.com/diamondburned/arikawa/v3/utils/sendpart"
 	"github.com/diamondburned/arikawa/v3/utils/ws"
 	"github.com/kitecloud/kite/kite-service/pkg/eval"
+	"github.com/kitecloud/kite/kite-service/pkg/message"
 )
 
 type FlowContext struct {
@@ -207,4 +210,22 @@ func (c *FlowContext) saveResumePoint(rp ResumePoint) (*ResumePoint, error) {
 	}
 
 	return &s, nil
+}
+
+
+// FilesForMessage returns files to be attached to a Discord message.
+// Any attachments in FlowContextState are converted into sendpart.Files.
+func (c *FlowContext) FilesForMessage(data *message.MessageData) []sendpart.File {
+	if len(c.FlowContextState.Attachments) == 0 {
+		return nil
+	}
+
+	var files []sendpart.File
+	for name, b := range c.FlowContextState.Attachments {
+		files = append(files, sendpart.File{
+			Name:   name,
+			Reader: bytes.NewReader(b),
+		})
+	}
+	return files
 }

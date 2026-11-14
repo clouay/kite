@@ -31,6 +31,7 @@ describe("withoutIds", () => {
       encoding: "utf8",
     })
       .filter((path) => path.endsWith("]"))
+      .map((p) => p.replace(/\\/g, "/"))
       .sort();
     const params = Object.entries(appPageParams).map(
       ([section, param]) => `${section}/${param}`

@@ -10,6 +10,7 @@ import (
 type FlowContextState struct {
 	NodeStates  map[string]*FlowContextNodeState `json:"node_states"`
 	Temporaries map[string]thing.Thing           `json:"temporaries"`
+	Attachments map[string][]byte                `json:"attachments,omitempty"`
 
 	// Triggers holds the interactions or events of earlier executions, oldest
 	// first. It's only set in resumed executions.
@@ -29,6 +30,7 @@ func NewFlowContextState() *FlowContextState {
 	return &FlowContextState{
 		NodeStates:  make(map[string]*FlowContextNodeState),
 		Temporaries: make(map[string]thing.Thing),
+		Attachments: make(map[string][]byte),
 	}
 }
 
@@ -38,6 +40,7 @@ func (s FlowContextState) MarshalJSON() ([]byte, error) {
 	aux := state(s)
 	aux.NodeStates = make(map[string]*FlowContextNodeState, len(s.NodeStates))
 	aux.Temporaries = make(map[string]thing.Thing, len(s.Temporaries))
+	aux.Attachments = make(map[string][]byte, len(s.Attachments))
 
 	// We don't want to serialize empty node states
 	for k, v := range s.NodeStates {
@@ -49,6 +52,12 @@ func (s FlowContextState) MarshalJSON() ([]byte, error) {
 	for k, v := range s.Temporaries {
 		if !v.IsNil() {
 			aux.Temporaries[k] = v
+		}
+	}
+
+	for k, v := range s.Attachments {
+		if len(v) > 0 {
+			aux.Attachments[k] = v
 		}
 	}
 
@@ -104,6 +113,7 @@ func (s *FlowContextState) Copy() FlowContextState {
 	copy := *s
 	copy.NodeStates = make(map[string]*FlowContextNodeState, len(s.NodeStates))
 	copy.Temporaries = make(map[string]thing.Thing, len(s.Temporaries))
+	copy.Attachments = make(map[string][]byte, len(s.Attachments))
 
 	for k, v := range s.NodeStates {
 		if !v.IsEmpty() {
@@ -117,7 +127,26 @@ func (s *FlowContextState) Copy() FlowContextState {
 		}
 	}
 
+	for k, v := range s.Attachments {
+		copy.Attachments[k] = v
+	}
+
 	return copy
+}
+
+func (s *FlowContextState) StoreAttachment(filename string, data []byte) {
+	if s.Attachments == nil {
+		s.Attachments = make(map[string][]byte)
+	}
+	s.Attachments[filename] = data
+}
+
+func (s *FlowContextState) GetAttachment(filename string) ([]byte, bool) {
+	if s.Attachments == nil {
+		return nil, false
+	}
+	data, ok := s.Attachments[filename]
+	return data, ok
 }
 
 // recordTrigger stores the trigger of the current execution before the state is

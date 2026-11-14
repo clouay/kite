@@ -16,6 +16,7 @@ type FlowProviders struct {
 	Log             provider.LogProvider
 	Variable        provider.VariableProvider
 	MessageTemplate provider.MessageTemplateProvider
+	ImageTemplate   provider.ImageTemplateProvider
 	Cooldown        provider.CooldownProvider
 	ResumePoint     ResumePointProvider
 	Secret          provider.SecretProvider

@@ -24,6 +24,7 @@ import { controlConditionAiChoice } from "./controlConditionAiChoice";
 import { controlConditionItemAiChoice } from "./controlConditionItemAiChoice";
 import { cookieApiCaptchaCreate } from "./cookieApiCaptchaCreate";
 import { cookieApiCaptchaGet } from "./cookieApiCaptchaGet";
+import { imageGenerate } from "./imageGenerate";
 import { cookieApiCardCreate } from "./cookieApiCardCreate";
 import { cookieApiMinecraftUserGet } from "./cookieApiMinecraftUserGet";
 import { cookieApiQrCodeCreate } from "./cookieApiQrCodeCreate";
@@ -178,6 +179,7 @@ export const blockDefinitions: BlockDefinition[] = [
   variableGet,
   robloxUserGet,
   cookieApiTranscriptCreate,
+  imageGenerate,
   cookieApiCardCreate,
   cookieApiQrCodeCreate,
   cookieApiCaptchaCreate,

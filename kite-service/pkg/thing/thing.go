@@ -407,6 +407,11 @@ func (w Thing) String() string {
 	case TypeArray:
 		return fmt.Sprintf("%v", w.Value)
 	case TypeObject:
+		if m, ok := w.Value.(map[string]Thing); ok {
+			if url, ok := m["url"]; ok {
+				return url.String()
+			}
+		}
 		return fmt.Sprintf("%v", w.Value)
 	default:
 		return fmt.Sprintf("%v", w.Value)

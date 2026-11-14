@@ -22,6 +22,7 @@ import (
 	"github.com/kitecloud/kite/kite-service/internal/api/handler/discordapi"
 	eventlistener "github.com/kitecloud/kite/kite-service/internal/api/handler/event_listener"
 	flowaihandler "github.com/kitecloud/kite/kite-service/internal/api/handler/flowai"
+	imagehandler "github.com/kitecloud/kite/kite-service/internal/api/handler/image"
 	"github.com/kitecloud/kite/kite-service/internal/api/handler/integration"
 	"github.com/kitecloud/kite/kite-service/internal/api/handler/itemversion"
 	"github.com/kitecloud/kite/kite-service/internal/api/handler/logs"
@@ -35,8 +36,10 @@ import (
 	userban "github.com/kitecloud/kite/kite-service/internal/api/handler/user_ban"
 	"github.com/kitecloud/kite/kite-service/internal/api/handler/variable"
 	"github.com/kitecloud/kite/kite-service/internal/api/session"
+	"github.com/kitecloud/kite/kite-service/internal/api/wire"
 	corebilling "github.com/kitecloud/kite/kite-service/internal/core/billing"
 	"github.com/kitecloud/kite/kite-service/internal/core/command"
+	pkgimage "github.com/kitecloud/kite/kite-service/pkg/image"
 	"github.com/kitecloud/kite/kite-service/internal/core/flowai"
 	"github.com/kitecloud/kite/kite-service/internal/core/notify"
 	"github.com/kitecloud/kite/kite-service/internal/core/plan"
@@ -79,6 +82,7 @@ func (s *APIServer) RegisterRoutes(
 	itemVersionStore store.ItemVersionStore,
 	apiTokenStore store.APITokenStore,
 	oauthCodeStore store.OAuthCodeStore,
+	imageStore store.ImageTemplateStore,
 	notifier *notify.Notifier,
 ) {
 	sessionManager := session.NewSessionManager(session.SessionManagerConfig{
@@ -176,6 +180,15 @@ func (s *APIServer) RegisterRoutes(
 
 	s.mux.Handle("GET "+oauth.MetadataPath, handler.APIHandler(oauthHandler.HandleMetadata))
 	s.mux.Handle("POST "+oauth.TokenPath, handler.APIHandler(oauthHandler.HandleOAuthToken))
+	v1Group.Post("/images/extract-colors", handler.TypedWithBody(func(c *handler.Context, req wire.ImageExtractColorsRequest) (*wire.ImageExtractColorsResponse, error) {
+		dom, avg, inv, domInv := pkgimage.ExtractImageColors(req.URL)
+		return &wire.ImageExtractColorsResponse{
+			Dominant:        dom,
+			Average:         avg,
+			Inverse:         inv,
+			DominantInverse: domInv,
+		}, nil
+	}))
 	oauthGroup := v1Group.Group("/oauth")
 	// Getting the request fetches the client's metadata document.
 	oauthGroup.Get("/authorize",
@@ -430,6 +443,19 @@ func (s *APIServer) RegisterRoutes(
 		assetStore,
 		appStateManager,
 	)
+
+	imageHandler := imagehandler.NewImageHandler(imageStore)
+	imagesGroup := appGroup.Group("/images").AllowAPIToken()
+	imagesGroup.Get("/", handler.Typed(imageHandler.HandleImageTemplateList))
+	imagesGroup.Post("/", handler.TypedWithBody(imageHandler.HandleImageTemplateCreate))
+	imagesGroup.Post("/extract-colors", handler.TypedWithBody(imageHandler.HandleImageExtractColors))
+	imagesGroup.Post("/render-preview", handler.TypedWithBody(imageHandler.HandleImageTemplateRenderPreview), handler.RateLimitByUser(30, time.Minute))
+
+	imageGroup := imagesGroup.Group("/{imageID}")
+	imageGroup.Get("/", handler.Typed(imageHandler.HandleImageTemplateGet))
+	imageGroup.Patch("/", handler.TypedWithBody(imageHandler.HandleImageTemplateUpdate))
+	imageGroup.Put("/", handler.TypedWithBody(imageHandler.HandleImageTemplateUpdate))
+	imageGroup.Delete("/", handler.Typed(imageHandler.HandleImageTemplateDelete))
 
 	messagesGroup := appGroup.Group("/messages").AllowAPIToken()
 	messagesGroup.Get("/", handler.Typed(messageHandler.HandleMessageList))

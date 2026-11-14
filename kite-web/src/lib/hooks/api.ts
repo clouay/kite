@@ -41,6 +41,8 @@ import {
   usePluginsQuery,
   usePluginInstanceQuery,
   usePluginInstancesQuery,
+  useImageTemplatesQuery,
+  useImageTemplateQuery,
 } from "../api/queries";
 import { APIResponse } from "../api/response";
 import {
@@ -63,6 +65,8 @@ import {
   MessageGetResponse,
   MessageInstanceListResponse,
   MessageListResponse,
+  ImageTemplateListResponse,
+  ImageTemplateGetResponse,
   PluginInstanceGetResponse,
   PluginInstanceListResponse,
   PluginListResponse,
@@ -91,7 +95,7 @@ export function useResponseData<T>(
   callback?: (res: APIResponse<T>) => void
 ): T | undefined {
   useEffect(() => {
-    if (data !== undefined && callback) {
+    if (data !== undefined && typeof callback === "function") {
       callback(data);
     }
   }, [data, callback]);
@@ -509,4 +513,32 @@ export function useFlowLogEntries(filter: FlowLogEntriesFilter) {
     enabled: !!(filter.commandId || filter.eventId || filter.messageId),
   });
   return useResponseData(query);
+}
+
+
+export function useImageTemplates(
+  appIdOrCallback?: string | ((res: APIResponse<ImageTemplateListResponse>) => void),
+  maybeCallback?: (res: APIResponse<ImageTemplateListResponse>) => void
+) {
+  const router = useRouter();
+  const appId = typeof appIdOrCallback === "string" ? appIdOrCallback : (router.query.appId as string);
+  const callback = typeof appIdOrCallback === "function" ? appIdOrCallback : maybeCallback;
+
+  const query = useImageTemplatesQuery(appId);
+  return useResponseData(query, callback);
+}
+
+export function useImageTemplate(
+  imageIdOrCallback?: string | ((res: APIResponse<ImageTemplateGetResponse>) => void),
+  maybeCallback?: (res: APIResponse<ImageTemplateGetResponse>) => void
+) {
+  const router = useRouter();
+  const imageId = typeof imageIdOrCallback === "string" ? imageIdOrCallback : (router.query.imageId as string);
+  const callback = typeof imageIdOrCallback === "function" ? imageIdOrCallback : maybeCallback;
+
+  const query = useImageTemplateQuery(
+    router.query.appId as string,
+    imageId
+  );
+  return useResponseData(query, callback);
 }

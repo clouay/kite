@@ -222,6 +222,14 @@ export const messageTemplateField: BlockField = {
   ).optional(),
 };
 
+export const imageTemplateField: BlockField = {
+  name: "image_template_id",
+  schema: userPicked(
+    z.string(),
+    "The image template to use for this image."
+  ),
+};
+
 export function requireMessage(schema: SettingsSchema) {
   return schema
     .refine(

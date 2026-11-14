@@ -136,6 +136,7 @@ func StartServer(c context.Context, cfg *config.Config) error {
 			UsageStore:           pg,
 			MessageStore:         pg,
 			MessageInstanceStore: pg,
+			ImageTemplateStore:   pg,
 			CommandStore:         pg,
 			EventListenerStore:   pg,
 			PluginInstanceStore:  pg,
@@ -214,7 +215,7 @@ func StartServer(c context.Context, cfg *config.Config) error {
 	},
 		pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg, pg,
 		assetStore, gateway, engine.WebhookRunner(gateway), planManager, pluginRegistry, tokenCrypt, commandManager,
-		pg, flowAssistant, pg, pg, pg, pg, pg, pg, pg, pg,
+		pg, flowAssistant, pg, pg, pg, pg, pg, pg, pg, pg, pg, // imageStore
 		notifier,
 	)
 	address := fmt.Sprintf("%s:%d", cfg.API.Host, cfg.API.Port)

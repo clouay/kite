@@ -100,6 +100,7 @@ export const FlowNodeTypeActionVoiceChannelJoin: FlowNodeType = "action_voice_ch
 export const FlowNodeTypeActionVoiceChannelLeave: FlowNodeType = "action_voice_channel_leave";
 export const FlowNodeTypeActionStatusSet: FlowNodeType = "action_status_set";
 export const FlowNodeTypeActionServerLeave: FlowNodeType = "action_server_leave";
+export const FlowNodeTypeActionImageGenerate: FlowNodeType = "action_image_generate";
 export const FlowNodeTypeControlConditionCompare: FlowNodeType = "control_condition_compare";
 export const FlowNodeTypeControlConditionItemCompare: FlowNodeType = "control_condition_item_compare";
 export const FlowNodeTypeControlConditionUser: FlowNodeType = "control_condition_user";
@@ -190,6 +191,11 @@ export interface FlowNodeData {
    * Guild Get, and the guild of member, channel, role and voice blocks
    */
   guild_target?: string;
+  /**
+   * Image Generate
+   */
+  image_template_id?: string;
+  image_variables?: string;
   /**
    * Message & Response Create, Edit, Delete
    */

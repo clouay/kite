@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["lucide-react"],
+  transpilePackages: ["lucide-react", "react-colorful"],
+  allowedDevOrigins: ["kite.clouay.com", "*.clouay.com", "localhost:3000"],
   output: process.env.OUTPUT === "export" ? "export" : "standalone",
   // Lets pages check for the export, which has no server for API routes.
   env: { OUTPUT: process.env.OUTPUT ?? "" },

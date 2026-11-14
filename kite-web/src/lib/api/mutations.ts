@@ -93,6 +93,11 @@ import {
   BundleVersionCreateRequest,
   BundleVersionCreateResponse,
   BundleDeleteResponse,
+  ImageTemplateCreateRequest,
+  ImageTemplateCreateResponse,
+  ImageTemplateUpdateRequest,
+  ImageTemplateUpdateResponse,
+  ImageTemplateDeleteResponse,
   BundleUpdateRequest,
   BundleUpdateResponse,
   BundleListingDeleteResponse,
@@ -1730,6 +1735,89 @@ export function useOAuthAuthorizeMutation(query: string) {
   return useMutation({
     mutationFn: (req: OAuthAuthorizeRequest) =>
       apiRequest<OAuthAuthorizeResponse>(`/v1/oauth/authorize?${query}`, {
+        method: "POST",
+        body: JSON.stringify(req),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+  });
+}
+
+
+export function useImageTemplateCreateMutation(appId: string) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (req: ImageTemplateCreateRequest) =>
+      apiRequest<ImageTemplateCreateResponse>(`/v1/apps/${appId}/images`, {
+        method: "POST",
+        body: JSON.stringify(req),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["apps", appId, "images"] });
+    },
+  });
+}
+
+export function useImageTemplateUpdateMutation(appId: string, imageId: string) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (req: ImageTemplateUpdateRequest) =>
+      apiRequest<ImageTemplateUpdateResponse>(
+        `/v1/apps/${appId}/images/${imageId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(req),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["apps", appId, "images"] });
+      client.invalidateQueries({ queryKey: ["apps", appId, "images", imageId] });
+    },
+  });
+}
+
+export function useImageTemplateDeleteMutation(appId: string) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (imageId: string) =>
+      apiRequest<ImageTemplateDeleteResponse>(
+        `/v1/apps/${appId}/images/${imageId}`,
+        {
+          method: "DELETE",
+        }
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["apps", appId, "images"] });
+    },
+  });
+}
+
+
+export function useImageTemplateRenderPreviewMutation(appId: string) {
+  return useMutation({
+    mutationFn: (req: {
+      width: number;
+      height: number;
+      format: string;
+      data: any;
+      sample_data: Record<string, any>;
+    }) =>
+      apiRequest<{
+        data_url: string;
+        width: number;
+        height: number;
+        format: string;
+      }>(`/v1/apps/${appId}/images/render-preview`, {
         method: "POST",
         body: JSON.stringify(req),
         headers: {

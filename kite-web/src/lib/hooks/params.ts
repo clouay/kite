@@ -39,3 +39,8 @@ export function useBundleId() {
   const router = useRouter();
   return router.query.bundleId as string;
 }
+
+export function useImageId() {
+  const router = useRouter();
+  return router.query.imageId as string;
+}

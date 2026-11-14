@@ -6184,6 +6184,80 @@
         "description": "The JSON the endpoint returns, as in Discord's API docs, e.g. result('id').code for a created invite or result('id')[0].content for a list of messages. Empty for endpoints that return nothing."
       }
     },
+    "action_image_generate": {
+      "title": "Generate Image",
+      "description": "Create custom rank cards, welcome banners, and dynamic images for your messages",
+      "contexts": [
+        "command",
+        "component_button",
+        "component_select_menu",
+        "event_discord",
+        "event_schedule",
+        "event_webhook"
+      ],
+      "outputs": [
+        "default"
+      ],
+      "owned_children": [],
+      "fixed": false,
+      "data_schema": {
+        "type": "object",
+        "properties": {
+          "custom_label": {
+            "description": "Label shown on the block in the editor instead of its default title. It has no effect on what the flow does.",
+            "type": "string"
+          },
+          "image_template_id": {
+            "type": "string",
+            "description": "ID of the image template to render.",
+            "x-user-picked": true
+          },
+          "image_variables": {
+            "description": "JSON object or dynamic variables to interpolate into image layers (e.g. {{ username }} or stats).",
+            "x-templated": true,
+            "type": "string"
+          },
+          "temporary_name": {
+            "description": "Stores the result of this block in a temporary variable that later blocks can read with {{var('name')}}. Lowercase letters, numbers and underscores only.",
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "image_template_id"
+        ],
+        "additionalProperties": false
+      },
+      "result_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Data URL of the generated SVG image"
+          },
+          "svg": {
+            "type": "string",
+            "description": "Raw SVG XML markup of the generated image"
+          },
+          "width": {
+            "type": "number",
+            "description": "Width of the image in pixels"
+          },
+          "height": {
+            "type": "number",
+            "description": "Height of the image in pixels"
+          }
+        },
+        "required": [
+          "url",
+          "svg",
+          "width",
+          "height"
+        ],
+        "description": "The generated image",
+        "additionalProperties": false
+      }
+    },
     "action_expression_evaluate": {
       "title": "Calculate Value",
       "description": "Evaluate math or other logical expressions and use the result later",

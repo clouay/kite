@@ -9,7 +9,8 @@ import {
 import { getNodeCreditsCost, useNodeValues } from "@/lib/flow/nodes";
 import { duplicateFlowNodes } from "@/lib/flow/clipboard";
 import { activityTypeOptions, statusOptions } from "@/lib/discord/presence";
-import { useAppFeature } from "@/lib/hooks/api";
+import { useAppFeature, useImageTemplates } from "@/lib/hooks/api";
+import ImageCreateDialog from "@/components/image/ImageCreateDialog";
 import { getFlowCredits } from "@/lib/flow/credits";
 import { describeList } from "@/lib/flow/list";
 import {
@@ -85,13 +86,23 @@ import {
   TrashIcon,
   XIcon,
   PlugIcon,
+  SparklesIcon,
+  SlidersHorizontalIcon,
+  BracesIcon,
+  TableIcon,
+  Code2Icon,
+  ExternalLinkIcon,
 } from "lucide-react";
+import { Badge } from "../ui/badge";
+import { toast } from "sonner";
+import { ImageTemplate } from "@/lib/types/wire.gen";
 import Link from "next/link";
 import {
   ReactNode,
   memo,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -212,6 +223,8 @@ export const settingInputs: Record<string, any> = {
   event_filter_ignore_case: EventFilterIgnoreCaseInput,
   message_data: MessageDataInput,
   message_template_id: MessageTemplateInput,
+  image_template_id: ImageTemplateInput,
+  image_variables: ImageVariablesInput,
   message_target: MessageTargetInput,
   emoji_data: EmojiDataInput,
   poll_data: PollDataInput,
@@ -2982,6 +2995,647 @@ function MessageTemplateInput({ data, updateData, errors }: InputProps) {
         <FlowMessageViewDialog name={template.name} message={template.data} />
       )}
     </>
+  );
+}
+
+interface ImageVariableField {
+  key: string;
+  legacyKey?: string;
+  layerId?: string;
+  title: string;
+  description: string;
+  defaultValue?: string;
+  isCustom?: boolean;
+}
+
+function ImageTemplateInput({ data, updateData, errors }: InputProps) {
+  const appId = useAppId();
+  const templates = useImageTemplates(appId);
+  const readOnly = useContext(FlowReadOnlyContext);
+
+  return (
+    <div className="flex space-x-2 items-end">
+      <BaseInput
+        type="select"
+        field="image_template_id"
+        title="Image Template"
+        description="Select an image template to render."
+        options={templates?.filter((t): t is NonNullable<typeof t> => !!t).map((t) => ({
+          value: t.id,
+          label: t.name,
+        }))}
+        value={data.image_template_id || ""}
+        updateValue={(v) => {
+          updateData({ image_template_id: v || undefined });
+        }}
+        errors={errors}
+        clearable
+      />
+      {!readOnly &&
+        (data.image_template_id ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon" asChild>
+                <Link
+                  href={{
+                    pathname: "/apps/[appId]/images/[imageId]",
+                    query: {
+                      appId: appId,
+                      imageId: data.image_template_id,
+                    },
+                  }}
+                  target="_blank"
+                >
+                  <PencilIcon className="h-5 w-5" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit image template</TooltipContent>
+          </Tooltip>
+        ) : (
+          <ImageCreateDialog
+            noRedirect
+            onCreated={(v) => updateData({ image_template_id: v })}
+          >
+            <Button variant="outline" size="icon">
+              <PlusIcon className="h-5 w-5" />
+            </Button>
+          </ImageCreateDialog>
+        ))}
+    </div>
+  );
+}
+
+function ImageVariablesInput({ data, updateData, errors }: InputProps) {
+  const appId = useAppId();
+  const templates = useImageTemplates(appId);
+  const readOnly = useContext(FlowReadOnlyContext);
+  const [viewMode, setViewMode] = useState<"fields" | "json">("fields");
+  const [isAddingCustom, setIsAddingCustom] = useState(false);
+  const [customKeyName, setCustomKeyName] = useState("");
+
+  const selectedTemplate = templates?.find((t) => t?.id === data.image_template_id);
+  const layers = (selectedTemplate?.data as any)?.layers || [];
+
+  const tmplSlug = (selectedTemplate?.name || "image")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "image";
+
+  const slugify = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "var";
+
+  // Parse currently saved variables
+  const parsedValues = useMemo<Record<string, string>>(() => {
+    if (!data.image_variables) return {};
+    try {
+      const obj = JSON.parse(data.image_variables);
+      if (typeof obj === "object" && obj !== null) {
+        const result: Record<string, string> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          result[k] = typeof v === "object" ? JSON.stringify(v) : String(v);
+        }
+        return result;
+      }
+    } catch {
+      // ignore
+    }
+    return {};
+  }, [data.image_variables]);
+
+  const extractPlaceholders = (str?: string): string[] => {
+    if (!str || typeof str !== "string") return [];
+    const results = new Set<string>();
+    // Double curly braces: {{user.username}}
+    const doubleMatches = Array.from(str.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g));
+    for (const m of doubleMatches) {
+      if (m[1]) results.add(m[1].trim());
+    }
+    // Single curly braces: {user.username}
+    const singleMatches = Array.from(str.matchAll(/\{([a-zA-Z0-9_.-]+)\}/g));
+    for (const m of singleMatches) {
+      if (m[1] && !m[1].startsWith("{") && !m[1].endsWith("}")) {
+        results.add(m[1].trim());
+      }
+    }
+    return Array.from(results);
+  };
+
+  const formatVarTitle = (ph: string): string => {
+    const lastPart = ph.split(".").pop() || ph;
+    return lastPart
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  // Build the list of layer variables from the image template
+  const variableRows = useMemo<ImageVariableField[]>(() => {
+    const rows: ImageVariableField[] = [];
+    const seenKeys = new Set<string>();
+
+    const checkAndAdd = (
+      val: string | undefined,
+      layerTitle: string,
+      layerId: string,
+      fieldLabel: string
+    ) => {
+      if (!val) return;
+      const phs = extractPlaceholders(val);
+      for (const ph of phs) {
+        if (!seenKeys.has(ph)) {
+          seenKeys.add(ph);
+          rows.push({
+            key: ph,
+            layerId,
+            title: `${layerTitle} · ${formatVarTitle(ph)}`,
+            description: `Value for {{${ph}}} (${fieldLabel})`,
+            defaultValue: ph,
+          });
+        }
+      }
+    };
+
+    for (const l of layers) {
+      const layerTitle = l.name || l.id || "Layer";
+      const baseKey = slugify(l.name || l.id);
+
+      // Check dynamic color and visibility fields on the layer
+      checkAndAdd(l.color, layerTitle, l.id, "Color");
+      checkAndAdd(l.background_color, layerTitle, l.id, "Background Color");
+      checkAndAdd(l.text_color, layerTitle, l.id, "Text Color");
+      checkAndAdd(l.fill_color, layerTitle, l.id, "Fill Color");
+      checkAndAdd(l.stroke_color, layerTitle, l.id, "Stroke Color");
+      checkAndAdd(l.visible_expression, layerTitle, l.id, "Visibility Condition");
+
+      if (l.type === "text") {
+        const phs = extractPlaceholders(l.content);
+        if (phs.length > 0) {
+          for (const ph of phs) {
+            if (!seenKeys.has(ph)) {
+              seenKeys.add(ph);
+              rows.push({
+                key: ph,
+                layerId: l.id,
+                title: phs.length === 1 ? layerTitle : `${layerTitle} · ${formatVarTitle(ph)}`,
+                description: `Value for {{${ph}}} in layer "${layerTitle}"`,
+                defaultValue: ph,
+              });
+            }
+          }
+        } else {
+          seenKeys.add(baseKey);
+          rows.push({
+            key: baseKey,
+            legacyKey: `${tmplSlug}.${l.id}.text`,
+            layerId: l.id,
+            title: layerTitle,
+            description: `Text content for layer "${layerTitle}"`,
+            defaultValue: l.content,
+          });
+        }
+      } else if (l.type === "image") {
+        const phs = extractPlaceholders(l.image_url);
+        if (phs.length > 0) {
+          for (const ph of phs) {
+            if (!seenKeys.has(ph)) {
+              seenKeys.add(ph);
+              rows.push({
+                key: ph,
+                layerId: l.id,
+                title: phs.length === 1 ? layerTitle : `${layerTitle} · ${formatVarTitle(ph)}`,
+                description: `Value for {{${ph}}} in image "${layerTitle}"`,
+                defaultValue: ph,
+              });
+            }
+          }
+        } else {
+          const key =
+            baseKey.endsWith("_url") || baseKey.endsWith("_image") || baseKey === "avatar"
+              ? baseKey
+              : `${baseKey}_url`;
+          seenKeys.add(key);
+          rows.push({
+            key,
+            legacyKey: `${tmplSlug}.${l.id}.image_url`,
+            layerId: l.id,
+            title: layerTitle,
+            description: `Image / Avatar URL for layer "${layerTitle}"`,
+            defaultValue: l.image_url,
+          });
+        }
+      } else if (l.type === "progress_bar") {
+        const phsVal = extractPlaceholders(l.value);
+        if (phsVal.length > 0) {
+          for (const ph of phsVal) {
+            if (!seenKeys.has(ph)) {
+              seenKeys.add(ph);
+              rows.push({
+                key: ph,
+                layerId: l.id,
+                title: `${layerTitle} · ${formatVarTitle(ph)} (Current Value)`,
+                description: `Value for {{${ph}}} in "${layerTitle}"`,
+                defaultValue: ph,
+              });
+            }
+          }
+        } else {
+          seenKeys.add(`${baseKey}_value`);
+          rows.push({
+            key: `${baseKey}_value`,
+            legacyKey: `${tmplSlug}.${l.id}.value`,
+            layerId: l.id,
+            title: `${layerTitle} · Current Value`,
+            description: `Current progress value for "${layerTitle}" (e.g. 75)`,
+            defaultValue: l.value,
+          });
+        }
+
+        const phsMax = extractPlaceholders(l.max_value);
+        if (phsMax.length > 0) {
+          for (const ph of phsMax) {
+            if (!seenKeys.has(ph)) {
+              seenKeys.add(ph);
+              rows.push({
+                key: ph,
+                layerId: l.id,
+                title: `${layerTitle} · ${formatVarTitle(ph)} (Max Value)`,
+                description: `Value for {{${ph}}} in "${layerTitle}"`,
+                defaultValue: ph,
+              });
+            }
+          }
+        } else {
+          seenKeys.add(`${baseKey}_max`);
+          rows.push({
+            key: `${baseKey}_max`,
+            legacyKey: `${tmplSlug}.${l.id}.max_value`,
+            layerId: l.id,
+            title: `${layerTitle} · Max Value`,
+            description: `Maximum progress value for "${layerTitle}" (e.g. 100)`,
+            defaultValue: l.max_value,
+          });
+        }
+      } else if (l.type === "badge") {
+        const phs = extractPlaceholders(l.label);
+        if (phs.length > 0) {
+          for (const ph of phs) {
+            if (!seenKeys.has(ph)) {
+              seenKeys.add(ph);
+              rows.push({
+                key: ph,
+                layerId: l.id,
+                title: phs.length === 1 ? layerTitle : `${layerTitle} · ${formatVarTitle(ph)}`,
+                description: `Value for {{${ph}}} in badge "${layerTitle}"`,
+                defaultValue: ph,
+              });
+            }
+          }
+        } else {
+          seenKeys.add(`${baseKey}_label`);
+          rows.push({
+            key: `${baseKey}_label`,
+            legacyKey: `${tmplSlug}.${l.id}.label`,
+            layerId: l.id,
+            title: `${layerTitle} · Badge Label`,
+            description: `Text label for badge "${layerTitle}"`,
+            defaultValue: l.label,
+          });
+        }
+      } else if (l.type === "repeater") {
+        const phs = extractPlaceholders(l.items_expression);
+        if (phs.length > 0) {
+          for (const ph of phs) {
+            if (!seenKeys.has(ph)) {
+              seenKeys.add(ph);
+              rows.push({
+                key: ph,
+                layerId: l.id,
+                title: phs.length === 1 ? layerTitle : `${layerTitle} · ${formatVarTitle(ph)}`,
+                description: `Value for {{${ph}}} for repeater rows`,
+                defaultValue: ph,
+              });
+            }
+          }
+        } else {
+          seenKeys.add(`${baseKey}_items`);
+          rows.push({
+            key: `${baseKey}_items`,
+            legacyKey: `${tmplSlug}.${l.id}.items`,
+            layerId: l.id,
+            title: `${layerTitle} · Items Array`,
+            description: `Array expression or variable for repeater rows`,
+            defaultValue: l.items_expression,
+          });
+        }
+      }
+    }
+
+    // 1. Add all keys from template sample_data
+    const sampleData = (selectedTemplate?.sample_data || {}) as Record<string, any>;
+    for (const [k, v] of Object.entries(sampleData)) {
+      const cleanK = k.replace(/^\{\{\s*|\s*\}\}$/g, "");
+      if (!seenKeys.has(cleanK)) {
+        seenKeys.add(cleanK);
+        rows.push({
+          key: cleanK,
+          title: formatVarTitle(cleanK),
+          description: `Template variable from sample data`,
+          defaultValue: typeof v === "object" ? JSON.stringify(v) : String(v ?? ""),
+        });
+      }
+    }
+
+    // 2. Add all keys from parsedValues that are already saved on this block
+    for (const k of Object.keys(parsedValues)) {
+      const cleanK = k.replace(/^\{\{\s*|\s*\}\}$/g, "");
+      if (!seenKeys.has(cleanK)) {
+        seenKeys.add(cleanK);
+        rows.push({
+          key: cleanK,
+          title: formatVarTitle(cleanK),
+          description: `Custom configured variable`,
+          isCustom: true,
+        });
+      }
+    }
+
+    return rows;
+  }, [layers, tmplSlug, selectedTemplate?.sample_data, parsedValues]);
+
+  // Read current value for a given variable row
+  const getRowValue = (row: ImageVariableField): string => {
+    // 1. Direct key: e.g. "username" or "user_avatar_url"
+    if (parsedValues[row.key] !== undefined) return parsedValues[row.key];
+    if (parsedValues[`{{${row.key}}}`] !== undefined) return parsedValues[`{{${row.key}}}`];
+
+    // 2. Legacy key: e.g. "rank_card.layer_1.text"
+    if (row.legacyKey && parsedValues[row.legacyKey] !== undefined) return parsedValues[row.legacyKey];
+    if (row.legacyKey && parsedValues[`{{${row.legacyKey}}}`] !== undefined) return parsedValues[`{{${row.legacyKey}}}`];
+
+    // 3. Layer ID: e.g. "layer_1"
+    if (row.layerId && parsedValues[row.layerId] !== undefined) return parsedValues[row.layerId];
+    if (row.layerId && parsedValues[`{{${row.layerId}}}`] !== undefined) return parsedValues[`{{${row.layerId}}}`];
+
+    // 4. Suffix matching for any key stored in parsedValues
+    if (row.layerId) {
+      for (const [k, v] of Object.entries(parsedValues)) {
+        const cleanK = k.replace(/^\{\{\s*|\s*\}\}$/g, "");
+        if (cleanK === row.layerId || cleanK.endsWith(`.${row.layerId}`) || cleanK.includes(`.${row.layerId}.`)) {
+          return v;
+        }
+      }
+    }
+
+    return "";
+  };
+
+  const updateField = (row: ImageVariableField, value: string) => {
+    const next = { ...parsedValues };
+
+    // Clean up all old variations of this row's key
+    delete next[row.key];
+    delete next[`{{${row.key}}}`];
+    if (row.legacyKey) {
+      delete next[row.legacyKey];
+      delete next[`{{${row.legacyKey}}}`];
+    }
+    if (row.layerId && row.layerId !== row.key) {
+      delete next[row.layerId];
+      delete next[`{{${row.layerId}}}`];
+      for (const k of Object.keys(next)) {
+        const cleanK = k.replace(/^\{\{\s*|\s*\}\}$/g, "");
+        if (cleanK.endsWith(`.${row.layerId}`) || cleanK.includes(`.${row.layerId}.`)) {
+          delete next[k];
+        }
+      }
+    }
+
+    if (value.trim() !== "") {
+      next[row.key] = value;
+    }
+
+    updateData({
+      image_variables: Object.keys(next).length > 0 ? JSON.stringify(next, null, 2) : undefined,
+    });
+  };
+
+  const deleteField = (row: ImageVariableField) => {
+    const next = { ...parsedValues };
+    delete next[row.key];
+    delete next[`{{${row.key}}}`];
+    if (row.legacyKey) {
+      delete next[row.legacyKey];
+      delete next[`{{${row.legacyKey}}}`];
+    }
+    if (row.layerId && row.layerId !== row.key) {
+      delete next[row.layerId];
+      delete next[`{{${row.layerId}}}`];
+      for (const k of Object.keys(next)) {
+        const cleanK = k.replace(/^\{\{\s*|\s*\}\}$/g, "");
+        if (cleanK.endsWith(`.${row.layerId}`) || cleanK.includes(`.${row.layerId}.`)) {
+          delete next[k];
+        }
+      }
+    }
+    updateData({
+      image_variables: Object.keys(next).length > 0 ? JSON.stringify(next, null, 2) : undefined,
+    });
+  };
+
+  const handleAddCustom = () => {
+    const clean = customKeyName.trim().replace(/^\{\{\s*|\s*\}\}$/g, "");
+    if (!clean) return;
+    const next = { ...parsedValues };
+    if (next[clean] === undefined) {
+      next[clean] = "";
+    }
+    updateData({
+      image_variables: JSON.stringify(next, null, 2),
+    });
+    setCustomKeyName("");
+    setIsAddingCustom(false);
+  };
+
+  if (!data.image_template_id) {
+    return (
+      <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-center">
+        <div className="text-xs text-muted-foreground">
+          Select an Image Template above to configure variables.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="font-medium text-foreground text-sm">Image Inputs</div>
+          <div className="text-muted-foreground text-xs">
+            Link source placeholders or enter values for the template layers.
+          </div>
+        </div>
+        <div className="flex items-center space-x-1 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs flex items-center space-x-1 px-2 text-muted-foreground hover:text-foreground"
+            onClick={() => setViewMode(viewMode === "fields" ? "json" : "fields")}
+            title={viewMode === "fields" ? "Switch to JSON Editor" : "Switch to Form Fields"}
+          >
+            {viewMode === "fields" ? (
+              <>
+                <Code2Icon className="h-3.5 w-3.5" />
+                <span>JSON</span>
+              </>
+            ) : (
+              <>
+                <SlidersHorizontalIcon className="h-3.5 w-3.5" />
+                <span>Fields</span>
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {viewMode === "json" ? (
+        <BaseInput
+          type="textarea"
+          field="image_variables"
+          errors={errors}
+          value={data.image_variables || ""}
+          placeholder={`{\n  "username": "{user.username}",\n  "avatar_url": "{user.avatar_url}"\n}`}
+          updateValue={(v) => updateData({ image_variables: v || undefined })}
+          placeholders
+        />
+      ) : (
+        <div className="space-y-4">
+          {variableRows.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center space-y-2">
+              <div className="text-xs text-muted-foreground">
+                No dynamic data fields detected on this image template.
+              </div>
+              {!readOnly && (
+                <div className="pt-1 flex items-center justify-center">
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" asChild>
+                    <Link
+                      href={{
+                        pathname: "/apps/[appId]/images/[imageId]",
+                        query: { appId, imageId: data.image_template_id },
+                      }}
+                      target="_blank"
+                    >
+                      <ExternalLinkIcon className="h-3.5 w-3.5" />
+                      <span>Open Image Editor</span>
+                    </Link>
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {variableRows.map((row) => (
+                <div key={row.key} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold text-foreground">
+                      {row.title}
+                    </div>
+                    {!readOnly && (row.isCustom || getRowValue(row) !== "") && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteField(row)}
+                        title={row.isCustom ? "Delete dynamic value" : "Clear value"}
+                      >
+                        <TrashIcon className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                  {row.description && (
+                    <div className="text-[11px] text-muted-foreground">
+                      {row.description}
+                    </div>
+                  )}
+                  <BaseInput
+                    field={`image_var_${row.key}`}
+                    value={getRowValue(row)}
+                    placeholder={
+                      row.defaultValue
+                        ? `Default: ${row.defaultValue}`
+                        : "Enter value or pick placeholder..."
+                    }
+                    updateValue={(v) => updateField(row, v)}
+                    placeholders
+                    errors={errors}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!readOnly && (
+            isAddingCustom ? (
+              <div className="p-3 border border-border rounded-lg bg-card space-y-2">
+                <div className="text-xs font-medium text-foreground">Add Custom Dynamic Value</div>
+                <div className="flex gap-2">
+                  <Input
+                    value={customKeyName}
+                    onChange={(e) => setCustomKeyName(e.target.value)}
+                    placeholder="e.g. rank, xp_needed, custom_title"
+                    className="h-8 text-xs font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddCustom();
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 text-xs shrink-0"
+                    onClick={handleAddCustom}
+                    disabled={!customKeyName.trim()}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs shrink-0 px-2"
+                    onClick={() => {
+                      setIsAddingCustom(false);
+                      setCustomKeyName("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full h-8 text-xs flex items-center justify-center gap-1.5 text-muted-foreground hover:text-foreground border-dashed"
+                onClick={() => setIsAddingCustom(true)}
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                <span>Add Dynamic Value</span>
+              </Button>
+            )
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

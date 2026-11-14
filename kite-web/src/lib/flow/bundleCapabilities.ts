@@ -89,6 +89,7 @@ export const harmlessTypes = [
   "action_expression_evaluate",
   "action_forum_post_create",
   "action_guild_get",
+  "action_image_generate",
   "action_log",
   "action_member_get",
   "action_message_create",

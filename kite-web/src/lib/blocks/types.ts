@@ -200,7 +200,7 @@ export type BlockResult =
       description?: string;
       schema?: undefined;
     }
-  | { thing?: undefined; list?: undefined; schema: z.ZodType };
+  | { thing?: ThingType; list?: boolean; schema: z.ZodType };
 
 // A block that sends a request.
 export type RequestBlockDefinition = BlockDefinition & {

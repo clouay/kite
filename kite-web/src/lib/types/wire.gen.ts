@@ -1131,6 +1131,46 @@ export interface FlowAIField {
 }
 
 //////////
+// source: image.go
+
+export interface ImageTemplate {
+  id: string;
+  app_id: string;
+  name: string;
+  description: null | string;
+  width: number /* int */;
+  height: number /* int */;
+  format: string;
+  data: any /* image.ImageData */;
+  sample_data: { [key: string]: any};
+  created_at: string /* RFC3339 */;
+  updated_at: string /* RFC3339 */;
+}
+export type ImageTemplateListResponse = (ImageTemplate | undefined)[];
+export type ImageTemplateGetResponse = ImageTemplate;
+export interface ImageTemplateCreateRequest {
+  name: string;
+  description: null | string;
+  width: number /* int */;
+  height: number /* int */;
+  format: string;
+  data: any /* image.ImageData */;
+  sample_data: { [key: string]: any};
+}
+export type ImageTemplateCreateResponse = ImageTemplate;
+export interface ImageTemplateUpdateRequest {
+  name: string;
+  description: null | string;
+  width: number /* int */;
+  height: number /* int */;
+  format: string;
+  data: any /* image.ImageData */;
+  sample_data: { [key: string]: any};
+}
+export type ImageTemplateUpdateResponse = ImageTemplate;
+export type ImageTemplateDeleteResponse = Empty;
+
+//////////
 // source: integration.go
 
 /**
@@ -1609,3 +1649,19 @@ export interface VariableValueSetRequest {
 }
 export type VariableValueSetResponse = VariableValue;
 export type VariableValueDeleteResponse = Empty;
+
+
+export interface ImageTemplateRenderPreviewRequest {
+  width: number;
+  height: number;
+  format: string;
+  data: import("./image.gen").ImageData;
+  sample_data: { [key: string]: any };
+}
+
+export interface ImageTemplateRenderPreviewResponse {
+  data_url: string;
+  width: number;
+  height: number;
+  format: string;
+}

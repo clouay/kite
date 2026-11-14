@@ -33,6 +33,9 @@ func executeActionMessageCreate(n *CompiledFlowNode, ctx *FlowContext) error {
 		return err
 	}
 	messageData := data.ToSendMessageData(opts)
+	if files := ctx.FilesForMessage(&data); len(files) > 0 {
+		messageData.Files = append(messageData.Files, files...)
+	}
 
 	channelTarget, err := ctx.EvalTemplate(n.Data.ChannelTarget)
 	if err != nil {
@@ -105,6 +108,9 @@ func executeActionMessageEdit(n *CompiledFlowNode, ctx *FlowContext) error {
 		return err
 	}
 	editData := data.ToEditMessageData(opts)
+	if files := ctx.FilesForMessage(&data); len(files) > 0 {
+		editData.Files = append(editData.Files, files...)
+	}
 
 	msg, err := ctx.Discord.EditMessage(
 		ctx,
@@ -151,6 +157,9 @@ func executeActionPrivateMessageCreate(n *CompiledFlowNode, ctx *FlowContext) er
 		return err
 	}
 	messageData := data.ToSendMessageData(opts)
+	if files := ctx.FilesForMessage(&data); len(files) > 0 {
+		messageData.Files = append(messageData.Files, files...)
+	}
 
 	userTarget, err := ctx.EvalTemplate(n.Data.UserTarget)
 	if err != nil {

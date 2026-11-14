@@ -24,6 +24,7 @@ import (
 	"github.com/kitecloud/kite/kite-service/internal/store"
 	"github.com/kitecloud/kite/kite-service/internal/util"
 	"github.com/kitecloud/kite/kite-service/pkg/flow"
+	"github.com/kitecloud/kite/kite-service/pkg/image"
 	"github.com/kitecloud/kite/kite-service/pkg/message"
 	"github.com/kitecloud/kite/kite-service/pkg/provider"
 	"github.com/kitecloud/kite/kite-service/pkg/thing"
@@ -882,6 +883,33 @@ func (p *MessageTemplateProvider) LinkMessageTemplateInstance(ctx context.Contex
 	}
 
 	return nil
+}
+
+type ImageTemplateProvider struct {
+	appID              string
+	imageTemplateStore store.ImageTemplateStore
+}
+
+func NewImageTemplateProvider(appID string, imageTemplateStore store.ImageTemplateStore) *ImageTemplateProvider {
+	return &ImageTemplateProvider{
+		appID:              appID,
+		imageTemplateStore: imageTemplateStore,
+	}
+}
+
+func (p *ImageTemplateProvider) ImageTemplate(ctx context.Context, id string) (*image.ImageTemplateData, error) {
+	tmpl, err := p.imageTemplateStore.ImageTemplate(ctx, p.appID, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image template: %w", err)
+	}
+
+	return &image.ImageTemplateData{
+		Width:      tmpl.Width,
+		Height:     tmpl.Height,
+		Format:     tmpl.Format,
+		Data:       tmpl.Data,
+		SampleData: tmpl.SampleData,
+	}, nil
 }
 
 // maxPendingTimers bounds the durable sleeps an app can have waiting, a busy

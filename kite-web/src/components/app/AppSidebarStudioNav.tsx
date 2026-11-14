@@ -5,6 +5,7 @@ import {
   StoreIcon,
   SlashSquareIcon,
   MailPlusIcon,
+  ImageIcon,
   PackageIcon,
 } from "lucide-react";
 
@@ -61,6 +62,11 @@ export default function AppSidebarStudioNav() {
             name: "Message Templates",
             url: "/apps/[appId]/messages",
             icon: MailPlusIcon,
+          },
+          {
+            name: "Image Templates",
+            url: "/apps/[appId]/images",
+            icon: ImageIcon,
           },
         ],
       },

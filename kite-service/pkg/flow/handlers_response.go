@@ -46,6 +46,9 @@ func executeActionResponseCreate(n *CompiledFlowNode, ctx *FlowContext) error {
 		return err
 	}
 	responseData := data.ToInteractionResponseData(opts)
+	if files := ctx.FilesForMessage(&data); len(files) > 0 {
+		responseData.Files = append(responseData.Files, files...)
+	}
 
 	hasCreatedResponse, err := ctx.Discord.HasCreatedInteractionResponse(ctx, interaction.ID)
 	if err != nil {
@@ -127,12 +130,19 @@ func executeActionResponseEdit(n *CompiledFlowNode, ctx *FlowContext) error {
 		}
 
 		if hasCreatedResponse {
-			msg, err = ctx.Discord.EditInteractionResponse(ctx, interaction.AppID, interaction.Token, data.ToEditInteractionResponseData(opts))
+			editData := data.ToEditInteractionResponseData(opts)
+			if files := ctx.FilesForMessage(&data); len(files) > 0 {
+				editData.Files = append(editData.Files, files...)
+			}
+			msg, err = ctx.Discord.EditInteractionResponse(ctx, interaction.AppID, interaction.Token, editData)
 			if err != nil {
 				return err
 			}
 		} else {
 			responseData := data.ToInteractionResponseData(opts)
+			if files := ctx.FilesForMessage(&data); len(files) > 0 {
+				responseData.Files = append(responseData.Files, files...)
+			}
 			resp := api.InteractionResponse{
 				Type: api.UpdateMessage,
 				Data: &responseData,
@@ -153,12 +163,16 @@ func executeActionResponseEdit(n *CompiledFlowNode, ctx *FlowContext) error {
 			return err
 		}
 
+		editData := data.ToEditInteractionResponseData(opts)
+		if files := ctx.FilesForMessage(&data); len(files) > 0 {
+			editData.Files = append(editData.Files, files...)
+		}
 		msg, err = ctx.Discord.EditInteractionFollowup(
 			ctx,
 			interaction.AppID,
 			interaction.Token,
 			discord.MessageID(messageID),
-			data.ToEditInteractionResponseData(opts),
+			editData,
 		)
 		if err != nil {
 			return err

@@ -31,6 +31,7 @@ type Env struct {
 	UsageStore           store.UsageStore
 	MessageStore         store.MessageStore
 	MessageInstanceStore store.MessageInstanceStore
+	ImageTemplateStore   store.ImageTemplateStore
 	CommandStore         store.CommandStore
 	EventListenerStore   store.EventListenerStore
 	PluginInstanceStore  store.PluginInstanceStore
@@ -78,6 +79,11 @@ func (s Env) flowProviders(appID string, session *state.State, links entityLinks
 		decisionProvider = NewDecisionProvider(s.HttpClient, s.OpenRouterAPIKey)
 	}
 
+	var imageTemplateProvider provider.ImageTemplateProvider = &provider.MockImageTemplateProvider{}
+	if s.ImageTemplateStore != nil {
+		imageTemplateProvider = NewImageTemplateProvider(appID, s.ImageTemplateStore)
+	}
+
 	var cooldownProvider provider.CooldownProvider = &provider.MockCooldownProvider{}
 	if s.CooldownProvider != nil {
 		cooldownProvider = s.CooldownProvider
@@ -95,6 +101,7 @@ func (s Env) flowProviders(appID string, session *state.State, links entityLinks
 		AI:              aiProvider,
 		Decision:        decisionProvider,
 		MessageTemplate: NewMessageTemplateProvider(appID, s.MessageStore, s.MessageInstanceStore),
+		ImageTemplate:   imageTemplateProvider,
 		Variable:        NewVariableProvider(appID, s.VariableStore, s.VariableValueStore),
 		Cooldown:        cooldownProvider,
 		ResumePoint: NewResumePointProvider(

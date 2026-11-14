@@ -111,3 +111,18 @@ packages:
     exclude_files:
       - "context.go"
       - "registry.go"
+
+  - path: "github.com/kitecloud/kite/kite-service/pkg/image"
+    output_path: "../kite-web/src/lib/types/image.gen.ts"
+    type_mappings:
+      null.String: "null | string"
+      null.Bool: "null | boolean"
+      null.Float: "null | number"
+      null.Int: "null | number"
+      uuid.UUID: "string /* uuid */"
+      uuid.NullUUID: "null | string /* uuid */"
+      time.Time: "string /* RFC3339 */"
+      null.Time: "null | string /* RFC3339 */"
+      json.RawMessage: "Record<string, any> | null"
+      manifest.Manifest: "Manifest"
+      Base64: "string"

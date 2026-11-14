@@ -57,6 +57,8 @@ import {
   ItemVersionListResponse,
   StatsGetResponse,
   APITokenListResponse,
+  ImageTemplateListResponse,
+  ImageTemplateGetResponse,
 } from "../types/wire.gen";
 
 export function useUserQuery(userId = "@me") {
@@ -732,5 +734,24 @@ export function usePluginInstanceQuery(appId: string, pluginId: string) {
         `/v1/apps/${appId}/plugins/${pluginId}`
       ),
     enabled: !!appId && !!pluginId,
+  });
+}
+
+
+export function useImageTemplatesQuery(appId: string) {
+  return useQuery({
+    queryKey: ["apps", appId, "images"],
+    queryFn: () =>
+      apiRequest<ImageTemplateListResponse>(`/v1/apps/${appId}/images`),
+    enabled: !!appId,
+  });
+}
+
+export function useImageTemplateQuery(appId: string, imageId: string) {
+  return useQuery({
+    queryKey: ["apps", appId, "images", imageId],
+    queryFn: () =>
+      apiRequest<ImageTemplateGetResponse>(`/v1/apps/${appId}/images/${imageId}`),
+    enabled: !!appId && !!imageId,
   });
 }
